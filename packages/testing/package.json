@@ -1,0 +1,42 @@
+{
+  "name": "@yachtparty/testing",
+  "version": "0.1.0",
+  "description": "Comprehensive testing infrastructure for Yachtparty platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest src/unit",
+    "test:integration": "jest src/integration",
+    "test:e2e": "jest src/e2e",
+    "build": "tsc",
+    "clean": "rm -rf dist coverage"
+  },
+  "dependencies": {
+    "@yachtparty/shared": "file:../../shared",
+    "@supabase/supabase-js": "^2.39.0",
+    "@anthropic-ai/sdk": "^0.27.0",
+    "twilio": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.10",
+    "@types/node": "^20.10.0",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "yachtparty",
+    "testing",
+    "jest",
+    "unit-tests",
+    "integration-tests",
+    "e2e-tests"
+  ],
+  "author": "Yachtparty",
+  "license": "UNLICENSED"
+}

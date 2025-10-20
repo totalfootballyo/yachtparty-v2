@@ -1,0 +1,22 @@
+{
+  "name": "@yachtparty/database",
+  "version": "0.1.0",
+  "description": "Database schemas, migrations, and utilities for Yachtparty",
+  "private": true,
+  "scripts": {
+    "migrate": "node scripts/migrate.js",
+    "migrate:up": "node scripts/migrate.js up",
+    "migrate:down": "node scripts/migrate.js down",
+    "seed": "node scripts/seed.js",
+    "reset": "node scripts/reset.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.0"
+  }
+}

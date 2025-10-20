@@ -1,0 +1,40 @@
+{
+  "name": "@yachtparty/sms-sender",
+  "version": "1.0.0",
+  "description": "SMS Sender service for Yachtparty - always-on Cloud Run service that listens for outbound message events and sends via Twilio",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit",
+    "docker:build": "docker build -t sms-sender .",
+    "docker:run": "docker run -p 8080:8080 --env-file .env sms-sender"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "@yachtparty/shared": "file:../../shared",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "twilio": "^5.3.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.16.11",
+    "eslint": "^8.57.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  },
+  "keywords": [
+    "sms",
+    "twilio",
+    "sender",
+    "cloud-run",
+    "websocket",
+    "yachtparty"
+  ],
+  "author": "Yachtparty",
+  "license": "UNLICENSED",
+  "private": true
+}

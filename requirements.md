@@ -1,0 +1,7382 @@
+# Yachtparty Multi-Agent System - Technical Requirements Document
+
+**Version:** 1.4
+**Date:** October 19, 2025
+**Status:** Re-engagement with LLM Judgment - All Agents Use Tool Calling
+**Intended Audience:** Engineering team, AI coding assistants (Claude Code), technical stakeholders
+
+***
+
+## 1. Executive Summary
+
+### 1.1 Purpose
+
+This document specifies the complete technical architecture for Yachtparty's multi-agent system - a proactive, AI-powered platform that facilitates professional connections and business solutions through conversational interfaces (primarily SMS, with future support for mobile app, WhatsApp, and iMessage).
+
+### 1.2 Product Vision
+
+Yachtparty creates a network where professionals seamlessly connect, share expertise, and discover business solutions through AI agents that act as personalized concierges. The system rewards users with 1 for actions that benefit the network while maintaining strict message discipline to maximize value and minimize annoyance.
+
+### 1.3 Core Design Principles
+
+**Three mission-critical requirements that influence every architectural decision:**
+
+1. **Proactive Engagement:** The system initiates conversations when needed to drive network value, not just responding reactively
+2. **Network-Positive Incentives:** Users earn credits for helpful actions (making intros, sharing insights), creating sustainable engagement without overt gamification
+3. **Message Discipline:** Strict rate limiting and priority-based delivery ensure users only receive high-value communications
+
+**Critical Design Constraints:**
+
+- **Do NOT assume** users will remember to follow up on requests
+- **Do NOT assume** users want us to search our database for solutions
+- **Do NOT assume** standard marketplace behavior patterns
+- **Do NOT design** as traditional request/response AI chat interface
+
+**Correct Mental Model:** `User → Agent + User ↔ Agent + Agent → User` over extended time periods, with intelligent orchestration of asynchronous workflows.
+
+### 1.4 Quick Start: Project Recreation Guide
+
+**Status as of October 16, 2025:**
+- ✅ All 6 Cloud Run services deployed and healthy
+- ✅ Database schema complete (8 migrations, including email_verified field)
+- ✅ 3 core agents fully implemented (Bouncer, Concierge, Account Manager)
+- ✅ Email verification workflow functional (two-stage: email + manual approval)
+- ✅ Re-engagement task scheduling fixed (24-hour delay working correctly)
+- ⏳ End-to-end testing in progress
+
+#### Current Deployment URLs
+
+| Service | URL | Status | Purpose |
+|---------|-----|--------|---------|
+| twilio-webhook | https://twilio-webhook-82471900833.us-central1.run.app | ✅ Healthy (rev 00028) | **Synchronously** processes inbound SMS |
+| sms-sender | https://sms-sender-ywaprnbliq-uc.a.run.app | ✅ Healthy | Sends outbound SMS via Twilio |
+| realtime-processor | https://realtime-processor-82471900833.us-central1.run.app | ✅ Healthy (rev 00002) | Background events only (NOT inbound SMS) |
+| task-processor | https://task-processor-82471900833.us-central1.run.app | ✅ Healthy | Processes scheduled agent tasks (30s poll) |
+| event-processor | https://event-processor-82471900833.us-central1.run.app | ✅ Healthy | Handles system events (10 handlers) |
+| message-orchestrator | https://message-orchestrator-82471900833.us-central1.run.app | ✅ Healthy | Rate limiting + message queue (30s poll) |
+
+#### Prerequisites for Recreation
+
+**Accounts & Services:**
+1. **Supabase Account** - PostgreSQL database (Pro plan recommended: $25/mo)
+2. **Google Cloud Platform** - Cloud Run hosting (project ID: `yachtparty-474117`)
+3. **Twilio Account** - SMS gateway (A2P 10DLC registration required)
+4. **Anthropic Account** - Claude API access
+5. **Cloudflare Account** - Email routing for verification (optional but recommended)
+6. **GitHub Account** - Code repository and CI/CD (optional)
+
+**Local Development Tools:**
+- Node.js 20+ (LTS)
+- npm 10+ (or pnpm for better workspace support)
+- TypeScript 5.3+
+- gcloud CLI (for Cloud Run deployment)
+- PostgreSQL client (psql) for local database work
+
+#### Step-by-Step Recreation
+
+**Step 1: Clone Repository & Install Dependencies**
+```bash
+git clone <repository-url>
+cd "Yachtparty v.2"
+npm install  # Installs all workspace packages
+```
+
+**Step 2: Configure Environment Variables**
+```bash
+# Copy template
+cp .env.example .env
+
+# Required variables (get from respective services):
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+SUPABASE_ANON_KEY=your-anon-key
+ANTHROPIC_API_KEY=sk-ant-...
+TWILIO_ACCOUNT_SID=ACxxxx
+TWILIO_AUTH_TOKEN=your-auth-token
+TWILIO_PHONE_NUMBER=+18445943348
+```
+
+**Step 3: Deploy Database Schema**
+```bash
+cd packages/database
+
+# Run migrations in order
+node migrate.js up 001_core_tables.sql
+node migrate.js up 002_agent_tables.sql
+node migrate.js up 003_supporting_tables.sql
+node migrate.js up 004_triggers.sql
+node migrate.js up 005_pg_cron.sql
+
+# Enable pg_cron extension in Supabase dashboard if not already enabled
+```
+
+**Step 4: Build All Packages**
+```bash
+# From project root
+npm run build  # Builds all TypeScript packages
+
+# Or build individually
+cd packages/shared && npm run build
+cd packages/agents/bouncer && npm run build
+cd packages/agents/concierge && npm run build
+cd packages/agents/account-manager && npm run build
+```
+
+**Step 5: Configure Google Cloud Secrets**
+```bash
+# Create secrets for Cloud Run services
+gcloud secrets create SUPABASE_URL --data-file=- <<< "$SUPABASE_URL"
+gcloud secrets create SUPABASE_SERVICE_KEY --data-file=- <<< "$SUPABASE_SERVICE_KEY"
+gcloud secrets create ANTHROPIC_API_KEY --data-file=- <<< "$ANTHROPIC_API_KEY"
+gcloud secrets create TWILIO_ACCOUNT_SID --data-file=- <<< "$TWILIO_ACCOUNT_SID"
+gcloud secrets create TWILIO_AUTH_TOKEN --data-file=- <<< "$TWILIO_AUTH_TOKEN"
+
+# Grant Cloud Run service account access to secrets
+gcloud secrets add-iam-policy-binding SUPABASE_URL \
+  --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+# Repeat for all secrets
+```
+
+**Step 6: Deploy Services to Cloud Run**
+```bash
+# Deploy in order (dependencies first)
+./deploy-service.sh twilio-webhook
+./deploy-service.sh sms-sender
+./deploy-service.sh realtime-processor
+./deploy-service.sh task-processor
+./deploy-service.sh event-processor
+./deploy-service.sh message-orchestrator
+
+# Verify all services are healthy
+for service in twilio-webhook sms-sender task-processor event-processor message-orchestrator; do
+  curl -s "https://$service-XXXXX.run.app/health" | jq
+done
+```
+
+**Step 7: Configure Twilio Webhook**
+```bash
+# In Twilio Console > Phone Numbers > Your Number > Messaging Configuration:
+# Set webhook URL to: https://twilio-webhook-XXXXX.run.app/sms
+# HTTP Method: POST
+# Ensure signature validation is enabled
+```
+
+**Step 8: Set Up Email Verification (Optional)**
+```bash
+# In Cloudflare Dashboard > Email Routing:
+# 1. Add domain: verify.yachtparty.xyz
+# 2. Create catch-all route forwarding to webhook
+# 3. Deploy email verification webhook (see Section 6.2)
+# 4. Test with: verify-USERID@verify.yachtparty.xyz
+```
+
+#### Critical Configuration Notes
+
+**Monorepo Dependency Handling:**
+- Deploy script automatically copies entire root `node_modules` to deployment directory
+- This is required because npm workspaces hoist dependencies to root
+- Don't copy `.gitignore` or `.dockerignore` to deployment (they exclude `dist/`)
+
+**Cloud Run Service Configuration:**
+- All services use `--allow-unauthenticated` for external access (Twilio, users)
+- Min instances set to 1 for always-on services (prevents cold starts)
+- Memory: 512Mi for all services (may need adjustment under load)
+- Timeout: 300s (5 minutes) for long-running LLM calls
+
+**Database Triggers & Functions:**
+- `notify_event()` trigger on events INSERT publishes to PostgreSQL NOTIFY channel
+- `notify_send_sms()` trigger on messages INSERT (status='pending') triggers SMS send
+- pg_cron jobs run every 1-2 minutes for task/message processing
+- Connection pooling via pgBouncer (included in Supabase)
+
+**Agent Processors:**
+- All agents are stateless - load context fresh from DB on each invocation
+- Prompt caching reduces costs by ~40% (see Section 7)
+- LLM calls logged in `agent_actions_log` for cost tracking
+- Event sourcing pattern for all inter-agent communication
+
+#### Verification Checklist
+
+After deployment, verify:
+- [ ] All 6 services return 200 OK on `/health` endpoint
+- [ ] Database has all tables from 5 migrations
+- [ ] pg_cron jobs are scheduled and running (check `cron.job`)
+- [ ] Twilio webhook URL is configured and signature validation enabled
+- [ ] All secrets accessible from Cloud Run (check logs for auth errors)
+- [ ] Test SMS: Send message to Twilio number, verify bouncer response
+- [ ] Check `agent_actions_log` for LLM call logging
+- [ ] Verify `events` table receiving events from webhook
+
+#### Common Issues & Solutions
+
+**Issue: MODULE_NOT_FOUND in Cloud Run**
+- Solution: Ensure `deploy-service.sh` copies entire root `node_modules`
+- Check: `rsync -a --exclude='@yachtparty' node_modules/ "${DEPLOY_DIR}/node_modules/"`
+
+**Issue: Container won't start (health check fails)**
+- Solution: Ensure service binds to `PORT` environment variable (default 8080)
+- Check: Library packages need HTTP wrapper (see message-orchestrator example)
+
+**Issue: dist/ folder not in Docker image**
+- Solution: Don't copy `.gitignore` to deployment directory
+- Check: `rsync -a --exclude='node_modules' --exclude='.gitignore' ...`
+
+**Issue: Supabase connection errors**
+- Solution: Verify service role key has proper permissions
+- Check: RLS policies may block service role (set `service_role_check()` bypass)
+
+**Issue: LLM responses slow/timeout**
+- Solution: Increase Cloud Run timeout to 300s, use prompt caching
+- Check: `agent_actions_log` for input/output token counts and cache hits
+
+#### Repository Structure
+
+```
+Yachtparty v.2/
+├── packages/
+│   ├── database/           # Migrations, seed data
+│   │   └── migrations/     # 5 SQL migration files
+│   ├── shared/             # Shared TypeScript types
+│   │   └── src/types/      # database.ts, events.ts, agents.ts
+│   ├── agents/             # Agent implementations
+│   │   ├── bouncer/        # User onboarding
+│   │   ├── concierge/      # Verified user interface
+│   │   └── account-manager/# Priority intelligence
+│   ├── services/           # Cloud Run services
+│   │   ├── twilio-webhook/ # Inbound SMS handler
+│   │   ├── sms-sender/     # Outbound SMS sender
+│   │   ├── realtime-processor/ # WebSocket processor
+│   │   ├── task-processor/ # Scheduled task processor
+│   │   └── event-processor/# System event processor
+│   └── orchestrator/       # Message orchestrator
+├── deploy-service.sh       # Deployment automation script
+├── requirements.md         # This document
+├── PROGRESS.md             # Build progress tracking
+├── SUB_AGENT_ASSIGNMENTS.md # Sub-agent work tracking
+└── .env.example            # Environment variable template
+```
+
+***
+
+## 2. System Architecture Overview
+
+### 2.1 Technology Stack
+
+**Primary Infrastructure:**
+
+- **Database:** Supabase (PostgreSQL) - single source of truth for all persistent data
+- **Cloud Services:** Google Cloud Run (Node.js/TypeScript) - long-running containers for stateless agent processors with persistent WebSocket connections
+- **SMS Gateway:** Twilio - A2P 10DLC messaging
+- **LLM Provider:** Anthropic Claude API (primary), Perplexity API (research), OpenAI (if needed)
+- **Scheduler:** Supabase pg_cron - time-based task processing
+- **Real-time:** Supabase Realtime (PostgreSQL LISTEN/NOTIFY) - event pub/sub
+
+**Optional Future Additions (Phase 2+):**
+
+- **Redis Cloud:** High-frequency operations (rate limiting, caching) - only if measurements show Supabase latency issues
+- **Apify:** LinkedIn automation for mutual connection discovery
+
+**Why Supabase-First Architecture:**
+
+At expected scale (SMS-based, human-paced interactions), PostgreSQL handles all queuing, event streaming, and scheduling requirements effectively. Redis adds operational complexity without proven benefit at current scale. Add Redis only when metrics show:[^1][^2][^3]
+
+- Task processing latency consistently >30s when requirement is <10s
+- Database CPU >70% during normal operations
+- Connection pool exhaustion with proper optimization
+
+
+### 2.2 Architectural Pattern: Event-Driven Saga Orchestration
+
+**Event-Driven Backbone:**
+All inter-agent communication happens via events published to the `events` table. Agents never directly call other agents, eliminating circular dependencies and enabling replay, debugging, and audit trails.[^4][^5]
+
+**Saga Pattern for Complex Workflows:**
+Multi-step workflows (e.g., solution research) use orchestrated sagas where agents make judgment calls at each step, deciding whether to continue, pivot, or notify users. This mimics human employee decision-making rather than simple event chains.[^6][^7][^8]
+
+**Why This Pattern:**
+
+- **Eliminates coupling:** Agents are stateless processors, no circular dependencies
+- **Enables judgment:** LLM decision points at each workflow step
+- **Supports debugging:** Complete event history for every workflow
+- **Scales independently:** Each agent type can scale based on its workload
+
+Scenario                              |  Pattern            |  Reason                       
+--------------------------------------+---------------------+-------------------------------
+User sends SMS to Bouncer/Concierge   |  Direct invocation  |  Need <2s response            
+Account Manager 6-hour review         |  Event-driven       |  Async OK, want audit trail   
+Solution research timeout check       |  Event-driven       |  Background task              
+Intro acceptance notification         |  Direct invocation  |  User waiting for confirmation
+Re-engagement message scheduled 24hr  |  Event-driven       |  Scheduled, not immediate     
+
+### 2.3 Message Flow Patterns - Synchronous vs Event-Driven
+
+**Critical Architectural Decision:** We use **BOTH** synchronous and event-driven patterns, chosen based on latency requirements and use case.
+
+#### Inbound User Messages: SYNCHRONOUS
+
+**Implementation:** twilio-webhook service receives SMS and **directly invokes** agent packages (Bouncer/Concierge), then immediately writes response to database.
+
+**Rationale:**
+1. **Latency requirement:** <3 seconds from SMS arrival to response sent (users expect instant replies)
+2. **Simplicity:** No event queuing overhead, simpler debugging
+3. **User experience:** Direct response feels conversational, not robotic
+4. **Error handling:** Immediate feedback if agent fails, can retry synchronously
+
+**Flow:**
+```
+SMS → Twilio → twilio-webhook → Agent Package (LLM call) → Response → Database → SMS Sender
+                                    ↓ <3 seconds ↓
+```
+
+#### Background Tasks: EVENT-DRIVEN
+
+**Implementation:** Agents publish events to `events` table, other services subscribe via Supabase Realtime or pg_cron polling.
+
+**Rationale:**
+1. **Audit trail:** Complete event history for debugging workflows
+2. **Retry logic:** Failed events can be replayed, tasks rescheduled
+3. **Decoupling:** Agents don't need to know about each other
+4. **Scalability:** Background processors scale independently
+
+**Examples:**
+- Account Manager publishes `priority.update` → Concierge subscribes, decides when to notify
+- Scheduled tasks (re-engagement) → pg_cron creates task → task-processor handles
+- Solution research → Multi-step saga with state persisted between events
+
+**This hybrid approach is a deliberate architectural choice**, not technical debt. It optimizes for user experience (synchronous) while maintaining system qualities (events) where latency is not critical.
+
+***
+
+## 3. Database Schema
+
+**📚 Complete Schema Reference:** [`packages/database/SCHEMA.md`](packages/database/SCHEMA.md)
+
+**Current Status (Oct 18, 2025):**
+- ✅ 19 tables deployed and verified
+- ✅ All Agent of Humans fields present
+- ✅ Message sequences supported
+- ✅ Email verification implemented
+- ✅ Community request closure fields added
+
+The following sections show the CREATE TABLE statements for key tables. For the complete, verified schema with all columns, indexes, and triggers, see the Schema Reference above.
+
+### 3.1 Core Tables
+
+#### `users`
+
+Primary user records for all platform participants.
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number VARCHAR(20) UNIQUE NOT NULL,
+  email VARCHAR(255),
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
+  company VARCHAR(255),
+  title VARCHAR(255),
+  linkedin_url VARCHAR(500),
+  
+  -- User classification
+  verified BOOLEAN DEFAULT FALSE,
+  innovator BOOLEAN DEFAULT FALSE,
+  expert_connector BOOLEAN DEFAULT FALSE,
+  expertise TEXT[], -- Areas user can help with
+  
+  -- Agent assignment
+  poc_agent_id VARCHAR(50), -- ID of primary agent (bouncer/concierge/innovator)
+  poc_agent_type VARCHAR(50), -- 'bouncer', 'concierge', 'innovator'
+
+  -- Referral tracking
+  referred_by UUID REFERENCES users(id), -- UUID of user who referred them
+  name_dropped VARCHAR(255), -- Raw referrer name if not matched to existing user
+
+  -- User preferences
+  quiet_hours_start TIME, -- Local time
+  quiet_hours_end TIME,
+  timezone VARCHAR(50),
+  response_pattern JSONB, -- Learned patterns: best times to reach, preferred style
+  
+  -- Credits and status
+  credit_balance INTEGER DEFAULT 0,
+  status_level VARCHAR(50) DEFAULT 'member',
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  last_active_at TIMESTAMPTZ,
+  
+  -- Indexes
+  INDEX idx_users_phone (phone_number),
+  INDEX idx_users_verified (verified),
+  INDEX idx_users_poc_agent (poc_agent_type, verified),
+  INDEX idx_users_referred_by (referred_by)
+);
+```
+
+**Why This Design:**
+
+- `poc_agent_id` tracks which agent instance owns this user's primary interface
+- `poc_agent_type` enables quick filtering for agent-specific queries
+- `referred_by` enables referral analytics and relationship tracking (foreign key to users.id)
+- `name_dropped` captures referrer names that don't match existing users for manual follow-up
+- `expertise` array enables community request matching
+- `response_pattern` JSONB stores ML-learned user behavior without schema changes
+
+
+#### `conversations`
+
+Tracks ongoing conversation threads between users and the system.
+
+```sql
+CREATE TABLE conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) NOT NULL,
+  phone_number VARCHAR(20) NOT NULL, -- Denormalized for quick lookup
+  status VARCHAR(50) DEFAULT 'active', -- active, paused, completed
+  
+  -- Context management
+  conversation_summary TEXT, -- Periodic LLM-generated summary
+  last_summary_message_id UUID,
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  last_message_at TIMESTAMPTZ,
+  
+  -- Indexes
+  INDEX idx_conversations_user (user_id),
+  INDEX idx_conversations_phone (phone_number),
+  INDEX idx_conversations_status (status, updated_at)
+);
+```
+
+**Why This Design:**
+
+- Each conversation thread tracked separately for context isolation
+- `conversation_summary` prevents context window explosion (summarize every 50 messages)
+- Phone number denormalized for webhook lookups (critical path optimization)
+
+
+#### `messages`
+
+Individual messages in conversations.
+
+```sql
+CREATE TABLE messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID REFERENCES conversations(id) NOT NULL,
+  user_id UUID REFERENCES users(id) NOT NULL,
+  
+  -- Message content
+  role VARCHAR(50) NOT NULL, -- 'user', 'concierge', 'bouncer', 'innovator', 'system'
+  content TEXT NOT NULL,
+  
+  -- Delivery tracking
+  direction VARCHAR(20) NOT NULL, -- 'inbound', 'outbound'
+  twilio_message_sid VARCHAR(100),
+  status VARCHAR(50), -- 'queued', 'sent', 'delivered', 'failed'
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  sent_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ,
+  
+  -- Indexes
+  INDEX idx_messages_conversation (conversation_id, created_at DESC),
+  INDEX idx_messages_user (user_id, created_at DESC),
+  INDEX idx_messages_twilio (twilio_message_sid)
+);
+```
+
+
+#### `events`
+
+Event sourcing table - all system events for agent coordination.
+
+```sql
+CREATE TABLE events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type VARCHAR(100) NOT NULL, -- 'user.message.received', 'solution.research_complete', etc.
+  
+  -- Event context
+  aggregate_id UUID, -- ID of primary entity (user, intro, solution_request)
+  aggregate_type VARCHAR(50), -- 'user', 'intro_opportunity', 'solution_request'
+  
+  -- Event data
+  payload JSONB NOT NULL, -- Full event data
+  metadata JSONB, -- Agent tracking, correlation IDs
+  
+  -- Processing tracking
+  processed BOOLEAN DEFAULT FALSE,
+  version INTEGER DEFAULT 1, -- For optimistic locking
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  created_by VARCHAR(100), -- Agent/function that created event
+  
+  -- Indexes
+  INDEX idx_events_type (event_type, created_at DESC),
+  INDEX idx_events_aggregate (aggregate_type, aggregate_id, created_at DESC),
+  INDEX idx_events_processed (processed, created_at) WHERE NOT processed,
+  INDEX idx_events_created (created_at DESC)
+);
+
+-- Trigger for real-time event notification
+CREATE OR REPLACE FUNCTION notify_event()
+RETURNS TRIGGER AS $$
+BEGIN
+  PERFORM pg_notify(
+    'agent_events',
+    json_build_object(
+      'id', NEW.id,
+      'event_type', NEW.event_type,
+      'aggregate_id', NEW.aggregate_id,
+      'payload', NEW.payload
+    )::text
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_event_created
+  AFTER INSERT ON events
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_event();
+```
+
+**Why This Design:**
+
+- Event sourcing provides complete audit trail and enables replay
+- `aggregate_id`/`aggregate_type` link events to primary entities
+- `processed` flag enables idempotent event processing
+- Trigger publishes to PostgreSQL NOTIFY for real-time agent subscriptions
+- JSONB payload allows flexible event schemas without migrations
+
+
+#### `agent_tasks`
+
+Task queue for scheduled and event-driven agent work.
+
+```sql
+CREATE TABLE agent_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Task classification
+  task_type VARCHAR(100) NOT NULL, -- 're_engagement_check', 'process_community_request', etc.
+  agent_type VARCHAR(50) NOT NULL, -- 'concierge', 'account_manager', 'solution_saga', etc.
+  
+  -- Task scope
+  user_id UUID REFERENCES users(id),
+  context_id UUID, -- Reference to related entity (conversation, intro, request)
+  context_type VARCHAR(50), -- Type of context_id entity
+  
+  -- Scheduling
+  scheduled_for TIMESTAMPTZ NOT NULL,
+  priority VARCHAR(20) DEFAULT 'medium', -- 'urgent', 'high', 'medium', 'low'
+  
+  -- Processing state
+  status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed', 'cancelled'
+  retry_count INTEGER DEFAULT 0,
+  max_retries INTEGER DEFAULT 3,
+  last_attempted_at TIMESTAMPTZ,
+  
+  -- Task data
+  context_json JSONB NOT NULL, -- All data needed to process task
+  result_json JSONB, -- Result after processing
+  error_log TEXT, -- Error details if failed
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  created_by VARCHAR(100), -- Agent/function that created task
+  completed_at TIMESTAMPTZ,
+  
+  -- Indexes
+  INDEX idx_tasks_due (status, scheduled_for, priority) 
+    WHERE status = 'pending',
+  INDEX idx_tasks_agent (agent_type, status, scheduled_for),
+  INDEX idx_tasks_user (user_id, status),
+  INDEX idx_tasks_context (context_type, context_id)
+);
+```
+
+**Why This Design:**
+
+- Replaces simple `follow_up` timestamp with full task management
+- `FOR UPDATE SKIP LOCKED` query pattern prevents duplicate processing[^2]
+- Retry logic built into schema (exponential backoff in processor)
+- `priority` enables urgent tasks to jump queue
+- `context_json` contains everything needed to process task independently
+
+**Cron Processor (runs every 2 minutes):**
+
+```sql
+SELECT cron.schedule(
+  'process-agent-tasks',
+  '*/2 * * * *',
+  $$
+    SELECT process_tasks_batch();
+  $$
+);
+
+CREATE OR REPLACE FUNCTION process_tasks_batch()
+RETURNS void AS $$
+DECLARE
+  task RECORD;
+BEGIN
+  FOR task IN
+    SELECT * FROM agent_tasks
+    WHERE status = 'pending'
+      AND scheduled_for <= now()
+    ORDER BY 
+      CASE priority
+        WHEN 'urgent' THEN 1
+        WHEN 'high' THEN 2
+        WHEN 'medium' THEN 3
+        WHEN 'low' THEN 4
+      END,
+      scheduled_for ASC
+    LIMIT 20
+    FOR UPDATE SKIP LOCKED
+  LOOP
+    -- Publish to event bus for Cloud Function processing
+    INSERT INTO events (event_type, aggregate_id, aggregate_type, payload, created_by)
+    VALUES (
+      'agent.task_ready',
+      task.id,
+      'agent_task',
+      json_build_object(
+        'task_id', task.id,
+        'task_type', task.task_type,
+        'agent_type', task.agent_type,
+        'context', task.context_json
+      ),
+      'task_processor_cron'
+    );
+    
+    -- Mark as processing
+    UPDATE agent_tasks 
+    SET status = 'processing',
+        last_attempted_at = now()
+    WHERE id = task.id;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+
+#### `message_queue`
+
+Outbound message queue managed by Message Orchestrator.
+
+```sql
+CREATE TABLE message_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) NOT NULL,
+  agent_id VARCHAR(100) NOT NULL, -- Agent instance that created message
+  
+  -- Message content (structured data from agents)
+  message_data JSONB NOT NULL, -- Structured findings/updates
+  final_message TEXT, -- Concierge-crafted prose (set after rendering)
+  
+  -- Scheduling and priority
+  scheduled_for TIMESTAMPTZ NOT NULL,
+  priority VARCHAR(20) DEFAULT 'medium',
+  
+  -- Message lifecycle
+  status VARCHAR(50) DEFAULT 'queued', -- 'queued', 'approved', 'sent', 'superseded', 'cancelled'
+  superseded_by_message_id UUID REFERENCES message_queue(id),
+  superseded_reason VARCHAR(100),
+  
+  -- Context awareness
+  conversation_context_id UUID REFERENCES conversations(id),
+  requires_fresh_context BOOLEAN DEFAULT FALSE, -- Recheck relevance before sending
+  
+  -- Delivery tracking
+  sent_at TIMESTAMPTZ,
+  delivered_message_id UUID REFERENCES messages(id),
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  -- Indexes
+  INDEX idx_queue_user_pending (user_id, status, scheduled_for)
+    WHERE status IN ('queued', 'approved'),
+  INDEX idx_queue_due (status, scheduled_for, priority)
+    WHERE status = 'approved'
+);
+```
+
+**Why This Design:**
+
+- Separates message queuing from actual delivery (orchestration layer)
+- `message_data` stores structured agent output, `final_message` stores concierge prose
+- `superseded_by_message_id` tracks when messages become stale
+- `requires_fresh_context` flags messages that need relevance check before sending
+
+
+#### `user_message_budget`
+
+Rate limiting for message frequency control.
+
+```sql
+CREATE TABLE user_message_budget (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) NOT NULL,
+  date DATE NOT NULL,
+  
+  -- Counters
+  messages_sent INTEGER DEFAULT 0,
+  last_message_at TIMESTAMPTZ,
+  
+  -- Limits (configurable per user)
+  daily_limit INTEGER DEFAULT 5,
+  hourly_limit INTEGER DEFAULT 2,
+  
+  -- User preferences
+  quiet_hours_enabled BOOLEAN DEFAULT TRUE,
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  UNIQUE (user_id, date),
+  INDEX idx_budget_user_date (user_id, date DESC)
+);
+```
+
+**Why This Design:**
+
+- Daily and hourly rate limits prevent message fatigue
+- Per-user limits allow customization for power users
+- Checked/updated atomically in single transaction by Message Orchestrator
+
+
+### 3.2 Agent-Specific Tables
+
+#### `user_priorities`
+
+Account Manager's ranked list of items for each user.
+
+```sql
+CREATE TABLE user_priorities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) NOT NULL,
+  
+  -- Priority item
+  priority_rank INTEGER NOT NULL, -- 1 = highest
+  item_type VARCHAR(50) NOT NULL, -- 'intro_opportunity', 'community_request', 'solution_update'
+  item_id UUID NOT NULL, -- Reference to specific item
+  value_score DECIMAL(5,2), -- Calculated value to user/network (0-100)
+  
+  -- Lifecycle
+  status VARCHAR(50) DEFAULT 'active', -- 'active', 'presented', 'actioned', 'expired'
+  created_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ,
+  presented_at TIMESTAMPTZ,
+  
+  -- Indexes
+  UNIQUE (user_id, item_type, item_id),
+  INDEX idx_priorities_user_active (user_id, status, priority_rank)
+    WHERE status = 'active'
+);
+```
+
+**Why This Design:**
+
+- Account Manager updates this table every 6 hours
+- Concierge reads top priorities when crafting user communications
+- `value_score` enables ML-based prioritization over time
+- `expires_at` ensures stale items don't clutter list
+
+
+#### `solution_workflows`
+
+Saga state tracking for solution research workflows.
+
+```sql
+CREATE TABLE solution_workflows (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) NOT NULL,
+  request_description TEXT NOT NULL,
+  category VARCHAR(100),
+  
+  -- Workflow state
+  current_step VARCHAR(100) NOT NULL, -- 'initial_research', 'awaiting_experts', 'final_evaluation'
+  status VARCHAR(50) DEFAULT 'in_progress', -- 'in_progress', 'completed', 'cancelled'
+  
+  -- Research results (accumulated over workflow)
+  perplexity_results JSONB,
+  matched_innovators JSONB,
+  community_insights JSONB,
+  expert_recommendations JSONB,
+  
+  -- Decision tracking
+  quality_threshold_met BOOLEAN DEFAULT FALSE,
+  last_decision_at TIMESTAMPTZ,
+  next_action VARCHAR(100),
+  
+  -- Saga coordination
+  pending_tasks JSONB DEFAULT '[]'::jsonb, -- [{type, id, created_at}]
+  completed_tasks JSONB DEFAULT '[]'::jsonb,
+  conversation_log JSONB DEFAULT '[]'::jsonb, -- Decision history for debugging
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  
+  -- Indexes
+  INDEX idx_workflows_user (user_id, status),
+  INDEX idx_workflows_status (status, updated_at)
+);
+```
+
+**Why This Design:**
+
+- Complete saga state in single row (simpler than distributed state)
+- `conversation_log` JSONB stores all LLM decisions for transparency
+- `pending_tasks` array tracks what saga is waiting for
+- Enables dashboard view: "Show all in-progress solution workflows"
+
+
+#### `intro_opportunities`
+
+Connection opportunities for users to make introductions.
+
+```sql
+CREATE TABLE intro_opportunities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Parties involved
+  connector_user_id UUID REFERENCES users(id) NOT NULL, -- User who can make intro
+  innovator_id UUID REFERENCES users(id), -- If innovator is on platform
+  prospect_id UUID REFERENCES prospects(id), -- If prospect not yet on platform
+  
+  -- Opportunity details
+  prospect_name VARCHAR(255) NOT NULL,
+  prospect_company VARCHAR(255),
+  prospect_title VARCHAR(255),
+  prospect_linkedin_url VARCHAR(500),
+  innovator_name VARCHAR(255),
+  
+  -- Incentive
+  bounty_credits INTEGER DEFAULT 50,
+  
+  -- Status tracking
+  status VARCHAR(50) DEFAULT 'open', -- 'open', 'pending', 'accepted', 'rejected', 'completed', 'removed'
+  connector_response TEXT, -- User's feedback
+  
+  -- Feed reference (if presented via feed)
+  feed_item_id UUID,
+  
+  -- Intro details (if accepted)
+  intro_email VARCHAR(255), -- Generated unique email for confirmation
+  intro_scheduled_at TIMESTAMPTZ,
+  intro_completed_at TIMESTAMPTZ,
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ,
+  
+  -- Indexes
+  INDEX idx_intros_connector (connector_user_id, status),
+  INDEX idx_intros_innovator (innovator_id, status),
+  INDEX idx_intros_status (status, created_at DESC)
+);
+```
+
+
+#### `prospects`
+
+Staging area for potential users uploaded by innovators. Prospects are automatically upgraded to users when they join Yachtparty, with fuzzy matching to handle email/name variations.
+
+```sql
+CREATE TABLE prospects (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+  -- Contact Information (at least one required)
+  email TEXT,
+  phone_number TEXT,
+  linkedin_url TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  company TEXT,
+  title TEXT,
+
+  -- Upload Metadata
+  innovator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  upload_source TEXT, -- 'csv', 'manual', 'linkedin_scrape'
+  upload_batch_id UUID, -- Groups prospects from same CSV upload
+
+  -- Status Tracking
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'contacted', 'converted', 'declined', 'invalid'
+  converted_to_user_id UUID REFERENCES users(id),
+  converted_at TIMESTAMPTZ,
+
+  -- Context & Notes
+  prospect_notes TEXT, -- Innovator's notes about fit/angle
+  target_solution_categories TEXT[], -- Solutions that might interest prospect
+
+  -- Metadata
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  -- Constraints
+  CONSTRAINT at_least_one_contact_method CHECK (
+    email IS NOT NULL OR
+    phone_number IS NOT NULL OR
+    linkedin_url IS NOT NULL
+  ),
+
+  -- Indexes
+  INDEX idx_prospects_email (email) WHERE email IS NOT NULL,
+  INDEX idx_prospects_phone (phone_number) WHERE phone_number IS NOT NULL,
+  INDEX idx_prospects_linkedin (linkedin_url) WHERE linkedin_url IS NOT NULL,
+  INDEX idx_prospects_innovator_id (innovator_id),
+  INDEX idx_prospects_status (status),
+  INDEX idx_prospects_upload_batch (upload_batch_id) WHERE upload_batch_id IS NOT NULL,
+  INDEX idx_prospects_converted_user (converted_to_user_id) WHERE converted_to_user_id IS NOT NULL
+);
+```
+
+**Why This Design:**
+
+- **Fuzzy Matching:** Uses `find_matching_prospects()` function with score-based algorithm to match prospects to users despite email/name variations (e.g., `jason.jones@` vs `jasonjones@`)
+- **Multi-Innovator Support:** Same prospect can be uploaded by multiple innovators; all get intro opportunities when prospect converts
+- **Batch Tracking:** `upload_batch_id` groups CSV uploads for analytics and debugging
+- **Auto-Upgrade Flow:** When user joins via Bouncer, system checks for matching prospects using email, phone, LinkedIn with fuzzy matching (70+ score threshold)
+- **Conversion Tracking:** Innovators earn credits when prospects join (10 credits per conversion)
+
+**Prospect-to-User Upgrade Flow:**
+
+1. **User joins** → Bouncer agent completes onboarding
+2. **Match search** → `findMatchingProspects()` checks all pending prospects using:
+   - Exact matches (email, phone, LinkedIn): 100 points
+   - Fuzzy email (normalized): 80 points
+   - Name + email domain: 70 points
+   - Name + company: 60 points
+3. **Auto-upgrade** → Score ≥ 70 triggers:
+   - Mark prospect as `converted`
+   - Create `intro_opportunity` for innovator
+   - Award credits to innovator
+   - Create task for Intro Agent
+4. **Multi-match** → If multiple innovators uploaded same prospect, all get intro opportunities
+
+See `docs/prospect-matching-strategy.md` for detailed matching algorithm.
+
+
+#### `linkedin_research_prospects`
+
+Tracks LinkedIn prospects researched via Social Butterfly / Demand Agent (renamed from original `prospects` table).
+
+```sql
+CREATE TABLE linkedin_research_prospects (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(255) NOT NULL,
+  company VARCHAR(255),
+  title VARCHAR(255),
+  linkedin_url VARCHAR(500),
+  email VARCHAR(255),
+
+  -- Research metadata
+  mutual_connections JSONB,
+  last_researched_at TIMESTAMPTZ,
+  users_researching UUID[], -- Users who nominated this prospect
+
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+
+#### `community_requests`
+
+Requests for expert insights from community.
+
+```sql
+CREATE TABLE community_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Request origin
+  requesting_agent_type VARCHAR(50) NOT NULL, -- 'solution_saga', 'demand_agent'
+  requesting_user_id UUID REFERENCES users(id), -- User who benefits
+  context_id UUID, -- Parent workflow (e.g., solution_workflow_id)
+  context_type VARCHAR(50),
+  
+  -- Request details
+  question TEXT NOT NULL,
+  category VARCHAR(100),
+  expertise_needed TEXT[], -- Match against users.expertise
+  
+  -- Targeting
+  target_user_ids UUID[], -- Specific experts to ask
+  
+  -- Status
+  status VARCHAR(50) DEFAULT 'open', -- 'open', 'responses_received', 'closed'
+  responses_count INTEGER DEFAULT 0,
+  
+  -- Close the loop
+  closed_loop_at TIMESTAMPTZ,
+  closed_loop_message TEXT, -- Feedback to responders
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ DEFAULT now() + INTERVAL '7 days',
+  
+  -- Indexes
+  INDEX idx_requests_status (status, created_at),
+  INDEX idx_requests_context (context_type, context_id),
+  INDEX idx_requests_expertise USING GIN (expertise_needed)
+);
+```
+
+
+#### `community_responses`
+
+Expert responses to community requests.
+
+```sql
+CREATE TABLE community_responses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id UUID REFERENCES community_requests(id) NOT NULL,
+  user_id UUID REFERENCES users(id) NOT NULL, -- Expert who responded
+  
+  -- Response content
+  response_text TEXT NOT NULL, -- Concierge summary
+  verbatim_answer TEXT NOT NULL, -- Exact user words
+  
+  -- Value tracking
+  usefulness_score INTEGER, -- 1-10, rated by requesting agent
+  impact_description TEXT, -- How this helped
+  
+  -- Credits
+  credits_awarded INTEGER,
+  credited_at TIMESTAMPTZ,
+  
+  -- Status
+  status VARCHAR(50) DEFAULT 'provided', -- 'provided', 'rewarded', 'closed_loop'
+  closed_loop_message TEXT, -- "Your insight helped X solve Y"
+  closed_loop_at TIMESTAMPTZ,
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  -- Indexes
+  INDEX idx_responses_request (request_id, created_at),
+  INDEX idx_responses_user (user_id, status),
+  INDEX idx_responses_status (status, created_at)
+);
+```
+
+
+#### `credit_events`
+
+Event sourcing for credits (prevents double-spending).
+
+```sql
+CREATE TABLE credit_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) NOT NULL,
+  
+  -- Transaction details
+  event_type VARCHAR(100) NOT NULL, -- 'intro_completed', 'community_response', 'referral_joined'
+  amount INTEGER NOT NULL, -- Can be negative for spending
+  
+  -- Idempotency
+  reference_type VARCHAR(50) NOT NULL, -- 'intro_opportunity', 'community_response'
+  reference_id UUID NOT NULL,
+  idempotency_key VARCHAR(255) UNIQUE NOT NULL, -- Prevents duplicates
+  
+  -- Audit
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  processed BOOLEAN DEFAULT FALSE,
+  
+  -- Indexes
+  INDEX idx_credits_user (user_id, created_at DESC),
+  INDEX idx_credits_reference (reference_type, reference_id),
+  UNIQUE INDEX idx_credits_idempotency (idempotency_key)
+);
+
+-- User balance is computed view
+CREATE VIEW user_credit_balances AS
+SELECT 
+  user_id,
+  SUM(amount) as balance,
+  COUNT(*) as transaction_count,
+  MAX(created_at) as last_transaction_at
+FROM credit_events
+WHERE processed = true
+GROUP BY user_id;
+```
+
+**Why This Design:**
+
+- Idempotency key prevents double-rewards (e.g., `intro_completed_{intro_id}_{user_id}`)
+- Event sourcing provides complete audit trail
+- Balance computed from events (eventual consistency acceptable)
+- Can replay/recalculate balances if needed
+
+**Credit Balance Authority:**
+- `user_credit_balances` VIEW is the **single source of truth** for balances
+- `users.credit_balance` field is a **cached value** for display performance
+- Cache updated via trigger when credit_events inserted:
+
+```sql
+CREATE OR REPLACE FUNCTION update_user_credit_cache()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE users
+  SET credit_balance = (
+    SELECT COALESCE(SUM(amount), 0)
+    FROM credit_events
+    WHERE user_id = NEW.user_id AND processed = true
+  )
+  WHERE id = NEW.user_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_credit_event_processed
+  AFTER INSERT OR UPDATE ON credit_events
+  FOR EACH ROW
+  WHEN (NEW.processed = true)
+  EXECUTE FUNCTION update_user_credit_cache();
+```
+
+
+### 3.3 Supporting Tables
+
+#### `prospects`
+
+Individuals not yet on platform (targets for intros/demand gen).
+
+```sql
+CREATE TABLE prospects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  company VARCHAR(255),
+  title VARCHAR(255),
+  linkedin_url VARCHAR(500),
+  email VARCHAR(255),
+  
+  -- Research results
+  mutual_connections JSONB, -- LinkedIn mutual connections
+  last_researched_at TIMESTAMPTZ,
+  
+  -- Tracking
+  users_researching UUID[], -- Users interested in connecting
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  INDEX idx_prospects_linkedin (linkedin_url)
+);
+```
+
+
+#### `innovators`
+
+Companies offering solutions (subset of users with extended profile).
+
+```sql
+CREATE TABLE innovators (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) UNIQUE NOT NULL,
+  
+  -- Company details
+  company_name VARCHAR(255) NOT NULL,
+  solution_description TEXT,
+  categories TEXT[], -- Solution categories
+  target_customer_profile TEXT,
+  
+  -- Video pitch
+  video_url VARCHAR(500),
+  
+  -- Status
+  credits_balance INTEGER DEFAULT 0, -- Separate from user credits
+  active BOOLEAN DEFAULT TRUE,
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  INDEX idx_innovators_categories USING GIN (categories),
+  INDEX idx_innovators_active (active, created_at DESC)
+);
+```
+
+
+#### `agent_actions_log`
+
+Comprehensive logging for debugging and cost tracking.
+
+```sql
+CREATE TABLE agent_actions_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Agent context
+  agent_type VARCHAR(50) NOT NULL,
+  action_type VARCHAR(100) NOT NULL, -- 'llm_call', 'function_execution', 'event_published'
+  
+  -- Request context
+  user_id UUID REFERENCES users(id),
+  context_id UUID,
+  context_type VARCHAR(50),
+  
+  -- LLM metrics
+  model_used VARCHAR(100),
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cost_usd DECIMAL(10,6),
+  latency_ms INTEGER,
+  
+  -- Execution details
+  input_data JSONB,
+  output_data JSONB,
+  error TEXT,
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  -- Indexes
+  INDEX idx_log_agent_time (agent_type, created_at DESC),
+  INDEX idx_log_user (user_id, created_at DESC),
+  INDEX idx_log_cost (created_at, cost_usd) WHERE cost_usd IS NOT NULL
+);
+```
+
+**Why This Design:**
+
+- Every LLM call logged for cost analysis
+- Token counts enable usage optimization
+- Error tracking for debugging
+- Can aggregate: "What did solution_saga cost us this month?"
+
+
+### 3.4 Conversation Summarization
+
+**Trigger:** Summarize conversation every 50 messages to prevent context window explosion.
+
+```sql
+-- Add to conversations table for tracking
+ALTER TABLE conversations ADD COLUMN messages_since_summary INTEGER DEFAULT 0;
+
+-- Trigger to check message count
+CREATE OR REPLACE FUNCTION check_conversation_summary()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Increment counter
+  UPDATE conversations
+  SET messages_since_summary = messages_since_summary + 1
+  WHERE id = NEW.conversation_id;
+
+  -- Check if summarization needed
+  IF (SELECT messages_since_summary FROM conversations WHERE id = NEW.conversation_id) >= 50 THEN
+    -- Create task for summarization
+    INSERT INTO agent_tasks (
+      task_type, agent_type, scheduled_for, context_json
+    ) VALUES (
+      'create_conversation_summary',
+      'system',
+      now(),
+      jsonb_build_object('conversation_id', NEW.conversation_id)
+    );
+
+    -- Reset counter
+    UPDATE conversations
+    SET messages_since_summary = 0
+    WHERE id = NEW.conversation_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_message_count_check
+  AFTER INSERT ON messages
+  FOR EACH ROW
+  EXECUTE FUNCTION check_conversation_summary();
+```
+
+**Task Handler:**
+
+```typescript
+async function createConversationSummary(conversationId: string) {
+  const messages = await getMessagesSinceLastSummary(conversationId);
+
+  const prompt = `Summarize this conversation concisely (200 words max):
+
+${messages.map(m => `${m.role}: ${m.content}`).join('\n')}
+
+Focus on:
+- User's stated needs/goals
+- Key facts shared (company, role, etc.)
+- Pending requests or follow-ups
+- Sentiment/engagement level`;
+
+  const summary = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 500,
+    messages: [{role: 'user', content: prompt}]
+  });
+
+  await supabase.from('conversations').update({
+    conversation_summary: summary.content[0].text,
+    last_summary_message_id: messages[messages.length - 1].id
+  }).eq('id', conversationId);
+}
+```
+
+
+### 3.5 Phone Number Recycling Protection
+
+**Problem:** Carriers recycle phone numbers. Need to handle when a number is reassigned to a new person.
+
+```sql
+-- Add history tracking to users table
+ALTER TABLE users ADD COLUMN phone_number_history JSONB DEFAULT '[]'::jsonb;
+
+-- Function to handle phone number changes
+CREATE OR REPLACE FUNCTION handle_phone_number_change()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.phone_number != OLD.phone_number THEN
+    -- Archive old number
+    UPDATE users
+    SET phone_number_history = phone_number_history || jsonb_build_object(
+      'phone_number', OLD.phone_number,
+      'changed_at', now(),
+      'changed_reason', 'user_update'
+    )
+    WHERE id = NEW.id;
+
+    -- Close old conversations
+    UPDATE conversations
+    SET status = 'closed',
+        updated_at = now()
+    WHERE phone_number = OLD.phone_number
+      AND user_id = NEW.id
+      AND status = 'active';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_phone_change
+  BEFORE UPDATE ON users
+  FOR EACH ROW
+  WHEN (OLD.phone_number IS DISTINCT FROM NEW.phone_number)
+  EXECUTE FUNCTION handle_phone_number_change();
+```
+
+**Detection Logic:**
+When a message arrives from a known phone number but conversation context seems completely wrong (detected via LLM), Bouncer agent asks verification questions:
+- "Is this still [previous user name]?"
+- If no match, creates new user record and archives old one
+
+***
+
+## 4. Agent Specifications
+
+### 4.1 Agent Design Philosophy
+
+**Agents are stateless event processors**, not persistent entities. Each agent invocation:
+
+1. Receives event/task with complete context
+2. Loads necessary data from database
+3. Makes decisions using LLM
+4. Publishes events and/or creates tasks
+5. Terminates
+
+**No agent maintains conversation history in memory.** Context is loaded fresh from database on each invocation.
+
+### 4.2 Agent Types and Responsibilities
+
+**Implementation Approach:** All POC agents (Bouncer, Concierge, Innovator) use Claude's tool calling to handle user interactions. The LLM receives the user's message along with available tools and decides which tools to invoke based on context. This eliminates the need for separate intent classification and enables more nuanced, context-aware decision making.
+
+### 4.2.1 Two-LLM Architecture Pattern
+
+**Critical Design Evolution:** After discovering that single-LLM tool calling consistently suppressed personality (LLM would use tools but provide no text response), we evolved to a **2-LLM sequential architecture** that strictly separates decision-making from personality expression.
+
+#### Architecture Overview
+
+Every agent invocation uses two sequential LLM calls with distinct responsibilities:
+
+```
+User Message → [Call 1: Decision] → Execute Tools → [Call 2: Personality] → Response
+```
+
+**Call 1: Decision-Making (Business Logic)**
+- **Purpose:** Extract structured data, decide actions, determine next scenario
+- **Model:** Claude Sonnet 4
+- **Temperature:** 0.1 (user messages) or 0.6 (re-engagement - needs social judgment)
+- **Max Tokens:** 500 (fast, focused)
+- **Message History:** Last 5 messages (user) or 10-15 messages (re-engagement)
+- **Tools:** Single `make_decision` tool with structured output
+- **Output:**
+  ```typescript
+  {
+    tools_to_use: Array<{tool_name: string, tool_input: object}>,
+    next_scenario: 'ask_for_name' | 'request_email_verification' | ...,
+    context_for_response: string  // Brief context for Call 2
+  }
+  ```
+- **NO personality, NO text response** - purely logical decision-making
+
+**Call 2: Personality Expression (Text Generation)**
+- **Purpose:** Generate personality-driven text response using Bouncer/Concierge voice
+- **Model:** Claude Sonnet 4
+- **Temperature:** 0.7 (natural, personality-rich)
+- **Max Tokens:** 300 (short responses only)
+- **Message History:** Same conversation history as Call 1 for continuity
+- **Tools:** NONE - text generation only
+- **Output:** Text response matching agent personality
+- **NO decisions, NO tool calls** - purely expressive
+
+#### File Structure (Separation of Concerns)
+
+Each agent follows this clean separation:
+
+**`decision.ts`** - Call 1 business logic ONLY
+```typescript
+export function buildDecisionPrompt(user, progress): string {
+  // Pure business logic prompt
+  // User state, onboarding progress, available tools
+  // Decision rules and guidelines
+  // NO personality, NO tone
+}
+
+export const DECISION_TOOL = {
+  name: 'make_decision',
+  input_schema: {
+    // Structured output schema
+  }
+};
+```
+
+**`personality.ts`** - Call 2 character/tone ONLY
+```typescript
+export const AGENT_PERSONALITY = `
+  YOUR ROLE: ...
+  PERSONALITY & TONE: ...
+  PRODUCT KNOWLEDGE: ...
+  TONE EXAMPLES: ...
+`;
+
+export const SCENARIO_GUIDANCE = {
+  ask_for_name: {
+    situation: '...',
+    guidance: '...',
+    example: '...'
+  },
+  // ... all scenarios
+};
+
+export function buildPersonalityPrompt(
+  scenario: string,
+  contextForResponse: string,
+  additionalContext?: object
+): string {
+  // Combines personality + scenario guidance
+  // Returns prompt for text generation
+}
+```
+
+**`index.ts`** - Orchestration ONLY
+```typescript
+async function handleUserMessage(context, message) {
+  // Build conversation history (last 5 messages)
+
+  // CALL 1: DECISION
+  const decisionPrompt = buildDecisionPrompt(context.user, context.progress);
+  const decision = await anthropic.messages.create({
+    temperature: 0.1,
+    tools: [DECISION_TOOL],
+    messages: conversationMessages
+  });
+
+  // EXECUTE TOOLS
+  for (const tool of decision.tools_to_use) {
+    await executeTool(tool);
+  }
+
+  // CALL 2: PERSONALITY
+  const personalityPrompt = buildPersonalityPrompt(
+    decision.next_scenario,
+    decision.context_for_response
+  );
+  const response = await anthropic.messages.create({
+    temperature: 0.7,
+    messages: conversationMessages  // Same history for continuity
+  });
+
+  return response.text;
+}
+```
+
+#### Configuration by Invocation Type
+
+Different invocation types use different configurations for Call 1:
+
+| Invocation Type | Message History | Temperature | Focus |
+|-----------------|----------------|-------------|--------|
+| **User Message** | Last 5 messages | 0.1 | Fast data extraction |
+| **Re-engagement** | Last 10-15 messages | 0.6 | Social judgment (tone, cadence, appropriateness) |
+| **Email Verified** | Last 10 messages | 0.7 | Skip Call 1, use personality directly |
+
+**Why Different Configs?**
+- **User messages** are time-sensitive (<3s requirement) → minimize context, low temp for speed
+- **Re-engagement** is NOT time-sensitive → maximize context for social awareness, higher temp for nuanced judgment
+
+#### Re-Engagement Social Judgment
+
+Call 1 for re-engagement includes explicit guidance to read conversation tone:
+
+```typescript
+## CRITICAL: Read Conversation Tone & Cadence
+
+Before deciding whether to message, analyze:
+
+1. **User's Emotional Tone:**
+   - Engaged and interested? Or distracted/rushed?
+   - Thoughtful or short answers?
+   - Frustrated, excited, or neutral?
+
+2. **Conversation Momentum:**
+   - Responding quickly (minutes) or slowly (hours)?
+   - Pattern of delays in responses?
+
+3. **User Needs Time to Act:**
+   - Did they say they need to do something?
+   - Waiting on email verification?
+   - Indicated they're busy?
+
+4. **Social Appropriateness:**
+   - Would reaching out feel pushy or helpful?
+   - Multiple unanswered follow-ups already?
+
+SEND MESSAGE when:
+- User engaged but dropped off naturally
+- Appropriate timing
+- Haven't sent multiple unanswered follow-ups
+
+DON'T SEND (next_scenario = 'no_message') when:
+- User indicated they're working on something
+- User seems disengaged/frustrated
+- Already ignored multiple follow-ups
+```
+
+#### Re-Engagement Limits
+
+**2-Attempt Limit:**
+- Bouncer sends max 2 re-engagement messages (24h apart)
+- After 2 attempts with no response → conversation paused
+- Prevents infinite follow-up loops to unresponsive users
+
+**Implementation:**
+- `attemptCount` tracked in re-engagement task context
+- Task-processor pauses conversation if `attemptCount > 2`
+- Bouncer agent stops creating new tasks if `attemptCount >= 2`
+
+#### Benefits of 2-LLM Pattern
+
+1. **Personality Always Present:** Call 2 has one job (generate text) and does it consistently
+2. **Clean Separation:** Business logic and tone live in separate files for easy modification
+3. **Single Source of Truth:** All personality in ONE place (`personality.ts`)
+4. **Optimized Per Use Case:** Different temps/contexts for user messages vs re-engagement
+5. **Social Awareness:** Higher temp + more context for nuanced re-engagement decisions
+6. **No Conflicting Instructions:** Decision prompt has ZERO personality, personality prompt has ZERO business logic
+
+#### Cost Considerations
+
+- **Two LLM calls per interaction** vs one (approximately 2x cost)
+- Mitigated by:
+  - Lower max_tokens for both calls (500 + 300 = 800 vs 1500+ for single call)
+  - Prompt caching on personality prompt (static across invocations)
+  - Fewer message history for user messages (5 vs 10-20)
+- **Net result:** ~30-40% cost increase for significantly better UX
+
+#### Call 2 Self-Reflection and Error Recovery
+
+**Purpose:** Catch and gracefully acknowledge agent errors during rapid iteration, maintaining trust and high standards.
+
+Call 2 personality prompts include explicit instructions to review the agent's OWN previous messages for issues:
+
+```typescript
+## Self-Reflection and Error Acknowledgment
+Before crafting your response, review YOUR OWN previous outbound messages. Check for:
+- **Internal system messages leaked to user**: JSON objects, tool calls, or internal prompts
+- **Duplicate messages**: Asked the same question twice?
+- **Strange ordering**: Messages came through in confusing sequence?
+- **Repetitive content**: Repeating unnecessarily?
+- **Odd phrasing**: Something that doesn't make sense?
+
+If issues detected, acknowledge with SELF-DEPRECATING HUMOR (never overly apologetic):
+
+Examples:
+- Leaked JSON: "Whoa! Wish I could blame that one on spell check but that was all me. Sorry. Let me compose myself."
+- Duplicates: "I just noticed I texted you the same thing twice. My bad. We have high standards here."
+- Strange order: "I noticed my texts came through in a strange order just now, sorry."
+
+Then continue with whatever you need to say next.
+```
+
+**Why This Works:**
+- LLM already analyzing message history for context → minimal additional cognitive load
+- Catches bugs before they erode trust
+- Maintains personality even when acknowledging mistakes
+- Self-deprecating humor shows confidence and humility
+
+**Message Sequences for Error Recovery:**
+
+Call 2 can send multiple sequential messages by using "---" delimiter:
+
+```
+Whoa! Wish I could blame that one on spell check but that was all me. Sorry. Let me compose myself.
+---
+What's your name?
+```
+
+Parsed into separate SMS messages:
+1. "Whoa! Wish I could blame that one on spell check but that was all me. Sorry. Let me compose myself."
+2. "What's your name?"
+
+**Implementation:**
+```typescript
+// Parse message sequences (split by "---" delimiter)
+const rawTexts = textBlocks.map(block => block.text.trim()).filter(t => t.length > 0);
+const messageTexts = rawTexts.flatMap(text =>
+  text.split(/\n---\n/).map(msg => msg.trim()).filter(msg => msg.length > 0)
+);
+```
+
+**Use Cases:**
+- Acknowledging mistake + asking next question (separate ideas)
+- Breaking long messages into digestible chunks
+- Separating different topics/requests
+
+#### Critical Bug Fix: System Message Direction
+
+**Problem:** System messages that trigger agents (re-engagement, email verification) were created with `direction: 'outbound'`, causing the SMS trigger to send internal JSON to users.
+
+**Root Cause:**
+```typescript
+// BUG: This triggers send_sms_webhook
+await supabase.from('messages').insert({
+  role: 'system',
+  content: JSON.stringify({type: 're_engagement_check', ...}),
+  direction: 'outbound',  // ❌ WRONG - triggers SMS send!
+  status: 'pending'
+});
+```
+
+The database trigger condition:
+```sql
+WHEN (NEW.status = 'pending' AND NEW.direction = 'outbound')
+  EXECUTE FUNCTION send_sms_webhook();
+```
+
+**Solution:** System messages that trigger agents must use `direction: 'inbound'`:
+
+```typescript
+// CORRECT: System messages trigger agents, don't get sent to users
+await supabase.from('messages').insert({
+  role: 'system',
+  content: systemMessageContent,
+  direction: 'inbound',  // ✅ CORRECT - won't trigger SMS send
+  status: 'pending'
+});
+```
+
+**Rule:** System messages are always `direction: 'inbound'` because they trigger agent invocations, which may produce outbound responses.
+
+### 4.3 Agent Tools
+
+POC agents use Claude's tool calling to handle user interactions. Each tool has a defined schema with required and optional parameters. The LLM decides which tools to invoke based on conversation context.
+
+#### **Bouncer Tools** (3 tools)
+
+**Tool: `collect_user_info`**
+- **Purpose:** Collect and store user information fields during onboarding
+- **Parameters:**
+  - `first_name` (string, optional)
+  - `last_name` (string, optional)
+  - `email` (string, optional)
+  - `company` (string, optional)
+  - `title` (string, optional)
+  - `linkedin_url` (string, optional)
+  - `expertise` (array of strings, optional)
+  - `referrer_name` (string, optional)
+  - `nomination` (string, optional)
+- **How it works:** Updates user record with provided fields. All parameters are optional to support incremental data collection during conversation.
+
+**Tool: `send_verification_email`**
+- **Purpose:** Generate verification email address for user to send to
+- **Parameters:** None
+- **How it works:** Creates a unique email address `verify-{userId}@verify.yachtparty.xyz`. User sends email from their work email to this address, which triggers webhook verification. Returns action for frontend to display the email address.
+
+**Tool: `complete_onboarding`**
+- **Purpose:** Mark user as verified and complete onboarding process
+- **Parameters:** None
+- **How it works:** Sets `user.verified = true`, changes `user.poc_agent_type` to 'concierge', publishes `user.verified` event. Only called after email verification and all required info collected.
+
+#### **Concierge Tools** (5 tools)
+
+**Tool: `publish_community_request`**
+- **Purpose:** Publish a request to the community when user asks a question needing expert input
+- **Parameters:**
+  - `question` (string, required) - The question to ask experts
+  - `expertise_needed` (array of strings, required) - Domains of expertise needed (e.g., ['saas', 'crm', 'sales_tools'])
+  - `requester_context` (string, optional) - Why they're asking, background context
+  - `desired_outcome` (string, optional) - One of: 'backchannel', 'introduction', 'quick_thoughts', 'ongoing_advice'
+  - `urgency` (string, optional) - One of: 'low', 'medium', 'high'
+  - `request_summary` (string, optional) - Short 3-5 word summary
+- **How it works:** Publishes `community.request_needed` event. Agent of Humans event handler matches experts, creates community_request record, routes to expert Account Managers who create user_priorities.
+
+**Tool: `request_solution_research`**
+- **Purpose:** Trigger solution research workflow when user needs vendor/solution recommendations
+- **Parameters:**
+  - `request_description` (string, required) - What solution they're looking for
+  - `category` (string, optional) - Solution category (e.g., 'crm', 'analytics', 'payment_processing')
+  - `urgency` (string, optional) - One of: 'low', 'medium', 'high'
+- **How it works:** Publishes `user.inquiry.solution_needed` event. Solution Saga agent picks it up and orchestrates multi-step research (Perplexity API, database searches, community asks).
+
+**Tool: `create_intro_opportunity`**
+- **Purpose:** Create introduction opportunity when user offers to make an intro
+- **Parameters:**
+  - `prospect_name` (string, required) - Name of person to introduce
+  - `prospect_company` (string, optional) - Company of prospect
+  - `reason` (string, optional) - Why this intro makes sense
+- **How it works:** Creates `intro_opportunities` record with status 'open', awards connector user 10 credits (bounty), publishes event for Account Manager to surface to innovators.
+
+**Tool: `store_user_goal`**
+- **Purpose:** Store user's stated goals or objectives in their profile
+- **Parameters:**
+  - `goal_description` (string, required) - What the user wants to achieve
+  - `goal_type` (string, optional) - Category: 'career', 'business_growth', 'learning', 'networking'
+- **How it works:** Updates `users.goals` field. Account Manager uses goals for priority scoring and re-engagement decisions.
+
+**Tool: `record_community_response`**
+- **Purpose:** Record expert's response to a community request
+- **Parameters:**
+  - `request_id` (string, required) - ID of the community request
+  - `response_text` (string, required) - Expert's response/advice
+- **How it works:** Creates community_response record, updates request status to 'responses_received', credits expert, publishes event for requester's Account Manager.
+
+#### **Innovator-Specific Tools** (4 tools)
+
+Innovator agent has access to all Concierge tools PLUS these additional tools:
+
+**Tool: `update_innovator_profile`**
+- **Purpose:** Update innovator profile fields like solution description, target customers, pricing
+- **Parameters:**
+  - `solution_name` (string, optional)
+  - `solution_description` (string, optional)
+  - `target_customer_profile` (string, optional)
+  - `pricing_model` (string, optional)
+  - `differentiation` (string, optional)
+- **How it works:** Updates `innovators` table record for user. Used during onboarding and when innovator wants to refine their profile.
+
+**Tool: `upload_prospects`**
+- **Purpose:** Generate a secure upload link for prospect list upload
+- **Parameters:** None
+- **How it works:** Creates temporary upload token, returns link/instructions for CSV upload. Integrates with file upload service.
+
+**Tool: `check_intro_progress`**
+- **Purpose:** Check status of pending introductions and report progress
+- **Parameters:** None
+- **How it works:** Queries `intro_opportunities` table for user's pending/accepted intros, returns summary action for LLM to present conversationally.
+
+**Tool: `request_credit_funding`**
+- **Purpose:** Generate payment link for credit top-up
+- **Parameters:**
+  - `amount` (number, required) - Number of credits to purchase
+- **How it works:** Creates payment token, integrates with Stripe to generate checkout link, returns action with payment URL.
+
+#### **Bouncer Agent**
+
+**Purpose:** Onboard new users through verification process.
+
+**Trigger Events:**
+
+- `user.message.received` WHERE `user.verified = false`
+
+**Responsibilities:**
+
+1. Guide user through onboarding steps:
+    - Track referral source (first question: "who told you about this?")
+    - Collect: first_name, last_name, company, title
+    - Request email verification (user emails support with a custom generated email address that hits a webhook)
+  
+2. **Referral tracking**: When user provides referrer name, lookup existing users and match using LLM confirmation. Store in `referred_by` (UUID) if matched, or `name_dropped` (text) if not found.
+3. // removed LinkedIn collection in onboarding for now. we may add this back if we can make it seamless for the user (ideally we find their profile in an asyc process and ask them, is this you?)
+4. Create re-engagement tasks if user goes inactive
+5. On completion: Set `user.verified = true`, change `poc_agent_type` to 'concierge'
+
+**Events Published:**
+
+- `user.onboarding_step.completed`
+- `user.verification.pending`
+- `user.verified` (final event when complete)
+
+**Tasks Created:**
+
+- `re_engagement_check` (scheduled 24h after last interaction if incomplete)
+
+**Tools Available:**
+
+See section 4.3 for complete tool documentation. Bouncer has access to:
+- `collect_user_info` - Store user information fields during onboarding
+- `send_verification_email` - Generate unique verification email address
+- `complete_onboarding` - Mark user as verified and transition to Concierge
+
+**Re-engagement with LLM Judgment:**
+
+When users go inactive during onboarding, the system uses a three-stage process:
+
+1. **Task-processor creates system message** (24h after last interaction):
+   - Includes context: attemptCount, lastInteractionAt, missingFields
+   - Guidance: "Soft tone. Ask if they still want to proceed. Do not list all missing fields."
+
+2. **Bouncer receives system message** and builds re-engagement system prompt:
+   - Tells LLM this is a re-engagement scenario
+   - Provides what's missing (for context only - not to list to user)
+   - Critical instruction: "Decide WHETHER to reach out. If yes, use SOFT TONE, keep it SHORT"
+   - Example tone: "Hey, should I close this invite? I'm just the bouncer and need to keep the line moving"
+
+3. **LLM decides with full judgment**:
+   - Whether to message at all (based on conversation history)
+   - What to say (context-aware, not listing all fields)
+   - Soft, brief approach
+
+**Single attempt only** - After one re-engagement, if no response, conversation is paused. No second follow-up.
+
+Implementation: `packages/agents/bouncer/src/index.ts` (handleReengagement, buildReengagementSystemPrompt)
+
+**State Tracking:**
+Uses `user` record fields:
+
+- `verified` = overall status
+- `email`, `first_name`, `last_name`, `company`, `title` = collected data
+- `referred_by` = UUID of referring user (if matched to existing user)
+- `name_dropped` = Raw referrer name text (if not matched)
+- Messages in conversation show progress
+
+**Personality & Positioning:**
+
+The Bouncer creates psychological exclusivity by acting as a selective gatekeeper, not an eager salesperson. This "velvet rope" positioning makes users want to get in rather than feeling recruited.
+
+**Key Messaging:**
+
+When users ask "What is Yachtparty?", use this exact wording:
+> "I'm just the bouncer but here are the basics: Yachtparty helps you get the industry intros, recs, and info you need—vetted by high-level peers. No fees. You earn credits (like equity) for participating, and the more value you add, the more you earn. Your status and rewards grow with the community."
+
+**System Prompt Guidelines (Learned from Implementation):**
+
+Critical elements for achieving desired agent tone:
+
+1. **Explicit behavioral constraints** - Specify exactly what NOT to do:
+   - NO exclamation points (use periods)
+   - NO superlatives (exclusive, amazing, incredible, exceptional)
+   - NO marketing speak or hype language
+   - Keep responses under 2 sentences when possible
+
+2. **Few-shot examples** - Show good vs. bad responses in system prompt
+
+3. **Model parameters**:
+   - `temperature: 0.3` - Reduces creative flourishes, maintains consistency
+   - `max_tokens: 512` - Forces brevity
+
+4. **Don't volunteer information** - Make users ask. Creates mystique and engagement.
+
+5. **Specific product wording** - Include exact messaging in system prompt
+
+**Implementation Note - Referral Tracking:**
+
+The referral tracking system uses a two-step LLM process to disambiguate names:
+
+1. **Extraction with Context**: The information extraction prompt includes the last 4 messages from conversation history. This allows the LLM to determine if a name is the referrer (responding to "who told you about this?") or the user's own name (responding to "what's your name?").
+
+2. **Fuzzy Matching with LLM Confirmation**: When a referrer name is extracted:
+   - `lookupUserByName()` searches verified users by first/last name with scoring (exact match: 50pts, partial: lower)
+   - Top 5 matches passed to LLM with formatted list: "Firstname Lastname at Company (user_id)"
+   - LLM responds with confidence (high/medium/low) and either confirmed user_id or null
+   - If matched: store in `users.referred_by` (UUID foreign key)
+   - If not matched: store in `users.name_dropped` (text) for manual review
+
+Files: `packages/agents/bouncer/src/onboarding-steps.ts` (lookupUserByName, collectUserInfo), `packages/agents/bouncer/src/index.ts` (referral matching logic), `packages/agents/bouncer/src/prompts.ts` (extraction prompt with context)
+
+#### **Concierge Agent**
+
+**Purpose:** Primary interface for verified users, orchestrates all user interactions.
+
+**Trigger Events:**
+
+- `user.message.received` WHERE `user.verified = true` AND `user.poc_agent_type = 'concierge'`
+- `agent.task_ready` WHERE `task_type IN ('notify_user', 'send_update')`
+
+**Responsibilities:**
+
+1. **Handle all user messages** - use tool calling to take appropriate actions based on context
+2. **Craft all outbound messages** - maintains consistent personality
+3. **Optimize communication timing** - learns user response patterns
+4. **Respect message budget** - only sends highest-value communications
+
+**Key Characteristic:** Primary interface agents (Bouncer, Concierge, Innovator) write prose directly to users. Background agents (Account Manager, Solution Saga, Social Butterfly) output structured data only.
+
+**New Responsibilities (Simplified Architecture):**
+
+- **Decides when to communicate** - calculates optimal timing based on user patterns, quiet hours, priorities
+- **Manages queued messages** - when send windows open (user active, quiet hours end), reviews queued messages and decides: send/modify/cancel
+- **Renders all prose** - converts structured data to conversational messages
+- **Supports multi-message sequences** - can break complex updates into 2-5 short SMS messages
+
+**Implementation Notes (October 18, 2025):**
+- ✅ Message sequence support implemented: LLM generates all messages in single call, returns JSON with `messages` array
+- ✅ Token limit increased to 800 (from 400) to support sequences while keeping individual messages at 2-3 sentences
+- ✅ Prompt caching enabled for system prompts, user profiles, conversation history, and priorities
+- ✅ Temperature set to 0.3 for consistent, professional tone
+- ✅ Tone guidelines refined: helpful and capable (not cheerleader), avoids exclamation points, brief responses
+
+**Intelligent Decision-Making Enhancements (October 20, 2025):**
+- ✅ **Ambiguity Detection:** Agent requests clarification when user intent is unclear instead of guessing which tool to use
+- ✅ **Multi-Message Intelligence:** Handles typo corrections, rapid messages, topic changes by analyzing conversation context and timestamps
+- ✅ **Post-Clarification Handling:** Exercises extra judgment after requesting clarification, detects frustration, acknowledges confusion gracefully
+- ✅ **Comprehensive Test Coverage:** 15 tests across 5 test suites validate decision logic, ambiguity detection, and multi-message scenarios
+
+See Section 15.5 for detailed implementation notes, examples, and design decisions.
+
+**Actions Available:**
+
+```typescript
+// Single message
+{type: 'send_message', content: '...'}
+
+// Multi-message sequence (NEW)
+{type: 'send_message_sequence', messages: ['...', '...'], delay_seconds: 1}
+
+// Queue for later
+{type: 'queue_message', content: '...', scheduled_for: '2025-10-19T09:00:00Z'}
+
+// Cancel queued message
+{type: 'cancel_queued_message', message_id: 'uuid', reason: '...'}
+```
+
+**Events Published:**
+
+- `user.inquiry.detected` → triggers solution_saga, intro workflow, etc.
+- `user.response.recorded` → logs feedback
+
+**Events Subscribed:**
+
+- `priority.update` (from Account Manager) → decides when/how to notify user
+
+**Context Loaded (on each invocation):**
+
+```javascript
+const conciergeContext = {
+  user: userRecord,
+  recentMessages: last20Messages,
+  userPriorities: topPrioritiesFromAccountManager, // Top 5 ranked items
+  outstandingCommunityRequests: userOpenRequests, // User's open community requests (up to 3)
+  userPreferences: learnedResponsePatterns,
+  conversationSummary: lastSummaryText // If >50 messages
+};
+```
+
+**Architectural Decision: Outstanding Community Requests in Context**
+
+*Why:* Users need to see their request history without storing it in a dedicated user field. Community requests persist even when no matching experts exist initially, so users can check on status later.
+
+*Implementation:* Concierge loads user's open/responses_received community_requests on each invocation. Prompt instructs agent to only mention these when contextually relevant, preventing cognitive overload while maintaining user awareness.
+
+```typescript
+// Load outstanding community requests (packages/agents/concierge/src/index.ts:297-306)
+const { data: communityRequests } = await supabase
+  .from('community_requests')
+  .select('id, question, created_at')
+  .eq('requesting_user_id', userId)
+  .in('status', ['open', 'responses_received'])
+  .order('created_at', { ascending: false })
+  .limit(3); // Only 3 most recent to avoid context bloat
+
+// Tactful mention prompt (packages/agents/concierge/src/prompts.ts:182-189)
+`Outstanding Community Requests:
+1. "Looking for CTV/OTT guidance" (2 days ago)
+
+IMPORTANT: Only mention these if directly relevant to current conversation.
+If user asks about related topic OR says they no longer need it:
+- Brief acknowledgment: "I haven't forgotten about [2-3 word description]. Still working on that."
+- Allow cancellation: Detect if user no longer needs it
+
+DO NOT bring these up unprompted in unrelated conversations.`
+```
+
+*Rationale:* This keeps the Concierge focused on personality and service while maintaining awareness of pending work. The "only mention when relevant" instruction prevents the agent from forcing updates into unrelated conversations.
+
+**Tools Available:**
+
+See section 4.3 for complete tool documentation. Concierge has access to:
+- `publish_community_request` - Publish request to community when user asks expert question
+- `request_solution_research` - Trigger solution research workflow for vendor recommendations
+- `create_intro_opportunity` - Create intro opportunity when user offers to make connection
+- `store_user_goal` - Store user's stated goals in profile for Account Manager
+- `record_community_response` - Record expert's response to community request
+
+**System Prompt Approach:**
+
+The Concierge system prompt includes:
+- Personality: Competent, proactive but never pushy (senior partner manager, not sycophant)
+- User context: Recent conversation, top priorities, outstanding community requests
+- Tone guidelines: Helpful and capable, avoids exclamation points, brief responses
+- Model parameters: `temperature: 0.3`, `max_tokens: 800`
+
+The LLM uses tool calling to handle actions instead of returning JSON with predefined action schemas.
+
+**Re-engagement with LLM Judgment:**
+
+For long-term re-engagement with verified users, the same pattern as Bouncer:
+
+1. **Task-processor creates system message** (scheduled based on Account Manager signals):
+   - Context: daysSinceLastMessage, priorityCount, hasActiveGoals
+   - Guidance: "Decide whether to reach out based on priorities, user goals, and conversation history. If messaging, be brief and value-focused."
+
+2. **Concierge receives system message** and uses full context:
+   - Loads user priorities from Account Manager
+   - Reviews conversation history
+   - Checks user's stated goals
+
+3. **LLM decides with full judgment**:
+   - Whether messaging adds value (not just checking in for the sake of it)
+   - What to say (focused on priorities or goals, not generic)
+   - Brief, value-driven approach
+
+Implementation: Task-processor creates system messages, Concierge handles them with same tool-calling pattern as regular messages.
+
+**Message Assembly Pattern:**
+When other agents need to communicate with user:
+
+```javascript
+// Solution Saga publishes structured data
+const solutionUpdate = {
+  eventType: 'solution.research_complete',
+  userId: 'user_123',
+  findings: {
+    matchedInnovators: [
+      {id: 'inn_1', name: 'Acme Corp', relevance: 0.9, reason: 'Enterprise CRM'}
+    ],
+    potentialVendors: ['Salesforce', 'HubSpot'],
+    clarifyingQuestions: [
+      {question: 'What is your budget range?', priority: 'high'}
+    ]
+  }
+};
+
+// Concierge receives this and crafts prose
+const conciergeMessage = `I'm doing some research here.
+
+One company that was nominated, Acme Corp, has an enterprise CRM. They specialize in custom workflows for companies your size.
+
+I also saw Salesforce and HubSpot mentioned a lot in my research.
+
+Before I dig deeper, what's your budget range for this? That'll help me narrow things down.`;
+```
+
+
+#### **Account Manager Agent**
+
+**Purpose:** Background processor that analyzes user activity and maintains priority intelligence.
+
+**NOT a conversational agent** - runs on schedule, never directly messages users. **Outputs structured findings only** - does NOT make timing or messaging decisions.
+
+**Trigger Events:**
+
+- Cron schedule (every 6 hours): `0 */6 * * *`
+- High-priority events: `intro.approved`, `community_response.received`
+
+**Responsibilities:**
+
+1. **Process events since last run** - fetch all user-related events
+2. **Update user_priorities table** - calculate value scores, rank items
+3. **Publish priority update events** - Concierge subscribes and decides when/how to notify
+4. **Manage saga lifecycles** - check on pending solution workflows, intro processes
+
+**Processing Logic:**
+
+```typescript
+async function processUserAccountManager(userId: string) {
+  // 1. Fetch all events since last run
+  const lastProcessedAt = await getLastProcessedTime(userId);
+  const events = await supabase
+    .from('events')
+    .select('*')
+    .eq('aggregate_id', userId)
+    .gte('created_at', lastProcessedAt)
+    .order('created_at', 'asc');
+
+  // 2. Categorize events
+  const categorized = {
+    newIntros: events.filter(e => e.event_type === 'intro.opportunity_created'),
+    communityRequests: events.filter(e => e.event_type === 'community.request_created'),
+    responses: events.filter(e => e.event_type === 'community.response_received'),
+    solutionUpdates: events.filter(e => e.event_type === 'solution.research_complete')
+  };
+
+  // 3. Calculate priority scores using LLM
+  const priorityScores = await calculatePriorityScores(userId, categorized);
+
+  // 4. Update user_priorities table
+  await updateUserPriorities(userId, priorityScores);
+
+  // 5. Publish priority update event (Concierge decides when/how to notify)
+  const urgentItems = priorityScores.filter(item => item.score > 80);
+  if (urgentItems.length > 0) {
+    await publishEvent({
+      eventType: 'priority.update',
+      aggregateId: userId,
+      payload: {
+        priorities: urgentItems,
+        maxScore: Math.max(...urgentItems.map(i => i.score)),
+        itemCount: urgentItems.length
+      }
+    });
+  }
+
+  // 6. Publish completion event
+  await publishEvent({
+    eventType: 'account_manager.processing.completed',
+    aggregateId: userId,
+    payload: {processedEvents: events.length, urgentItems: urgentItems.length}
+  });
+}
+```
+
+**LLM Decision Points:**
+
+- "What is the value score of each item to this user?" (0-100 based on user profile, past behavior)
+- "Which items should expire due to staleness?"
+
+**Events Published:**
+
+- `priority.update` - Concierge listens, decides when/how to communicate
+- `account_manager.processing.completed`
+
+**No Direct User Interaction or Scheduling:** All timing decisions, message crafting, and user communication handled by POC agents (Concierge).
+
+**Implementation Notes (October 19, 2025):**
+- ✅ Account Manager fully operational as background processor
+- ✅ Runs on user events and scheduled tasks (via task-processor service)
+- ✅ LLM-based priority scoring implemented
+- ✅ Publishes priority.update events for Concierge to consume
+- ✅ **Re-engagement with LLM Judgment**: Task-processor creates system message → Concierge receives it → LLM decides whether/what to say based on priorities, goals, and conversation history
+- ✅ Never directly messages users - always via Concierge with full context
+
+#### **Solution Saga**
+
+**Purpose:** Orchestrate multi-step solution research with LLM decision points using event-driven state machine.
+
+**Trigger Events:**
+
+- `user.inquiry.solution_needed` (published by Concierge)
+- `community.response_received` (wakes up saga to process expert response)
+- `agent.task_ready` WHERE `task_type = 'solution_workflow_timeout'`
+
+**Important:** Solution Saga is implemented as an **event-driven state machine**, not a long-running async function. State is persisted in `solution_workflows` table between invocations.
+
+**Saga Implementation:**
+
+```typescript
+class SolutionSagaOrchestrator {
+
+  async startWorkflow(userId: string, solutionRequest: string) {
+    // Create workflow record (persistent state)
+    const workflow = await supabase.from('solution_workflows').insert({
+      user_id: userId,
+      request_description: solutionRequest,
+      current_step: 'initial_research',
+      status: 'in_progress',
+      pending_tasks: [],
+      completed_tasks: []
+    }).select().single();
+
+    // Immediately execute first step
+    await this.executeStep(workflow.id, 'initial_research');
+  }
+
+  async executeStep(workflowId: string, step: string) {
+    const workflow = await this.getWorkflow(workflowId);
+
+    switch (step) {
+      case 'initial_research':
+        // Execute research (synchronous)
+        const [perplexity, innovators] = await Promise.all([
+          this.researchWithPerplexity(workflow),
+          this.searchInnovatorsDB(workflow)
+        ]);
+
+        // Update workflow state
+        await this.updateWorkflow(workflowId, {
+          perplexity_results: perplexity,
+          matched_innovators: innovators,
+          current_step: 'evaluate_initial'
+        });
+
+        // Immediately move to next step
+        await this.executeStep(workflowId, 'evaluate_initial');
+        break;
+
+      case 'evaluate_initial':
+        // LLM decision point
+        const decision = await this.evaluateInitialFindings(workflow);
+
+        if (decision.hasValueToShare) {
+          await this.notifyConcierge(workflowId, decision.findings);
+        }
+
+        // Create community request
+        const requestId = await this.createCommunityRequest(workflowId);
+
+        // Update state and WAIT (don't await)
+        await this.updateWorkflow(workflowId, {
+          current_step: 'awaiting_expert_responses',
+          pending_tasks: [{
+            type: 'community_request',
+            id: requestId,
+            created_at: new Date(),
+            min_responses: 2
+          }]
+        });
+
+        // Schedule timeout task (24h from now)
+        await createAgentTask({
+          task_type: 'solution_workflow_timeout',
+          agent_type: 'solution_saga',
+          scheduled_for: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          context_json: {workflowId, step: 'expert_responses_timeout'}
+        });
+
+        // FUNCTION EXITS HERE - state saved to DB
+        break;
+
+      case 'process_expert_response':
+        // Triggered by event: community.response_received
+        const response = workflow.context.expertResponse;
+
+        const decision2 = await this.processExpertResponse(workflow, response);
+
+        // Update completed tasks
+        const updated = workflow.completed_tasks.concat({
+          type: 'expert_response',
+          responseId: response.id,
+          decision: decision2
+        });
+
+        await this.updateWorkflow(workflowId, {
+          completed_tasks: updated
+        });
+
+        // Check if we have enough responses
+        const threshold = await this.checkResponseThreshold(workflow);
+
+        if (threshold.met) {
+          await this.executeStep(workflowId, 'final_evaluation');
+        }
+        // Otherwise, keep waiting for more responses
+        break;
+
+      case 'expert_responses_timeout':
+      case 'final_evaluation':
+        // Triggered by scheduled task after 24h OR threshold met
+        const finalDecision = await this.evaluateFinalFindings(workflow);
+
+        await this.notifyConcierge(workflowId, finalDecision.recommendations);
+
+        await this.updateWorkflow(workflowId, {
+          status: 'completed',
+          current_step: 'complete',
+          completed_at: new Date()
+        });
+        break;
+    }
+  }
+
+  // Event handler: Called when expert responds
+  async onCommunityResponseReceived(event: Event) {
+    const {responseId, requestId} = event.payload;
+
+    // Find workflow waiting for this response
+    const workflow = await supabase
+      .from('solution_workflows')
+      .select('*')
+      .contains('pending_tasks', [{type: 'community_request', id: requestId}])
+      .single();
+
+    if (!workflow) return; // Not part of active saga
+
+    // Add response to workflow context
+    await this.updateWorkflow(workflow.id, {
+      context_json: {
+        ...workflow.context_json,
+        expertResponse: await getCommunityResponse(responseId)
+      }
+    });
+
+    // Resume saga at this step
+    await this.executeStep(workflow.id, 'process_expert_response');
+  }
+}
+  
+  // LLM Decision Point 1
+  async evaluateInitialFindings(workflowId: string) {
+    const workflow = await getWorkflow(workflowId);
+    
+    const prompt = `Evaluate solution research quality.
+
+User needs: "${workflow.request_description}"
+
+Research completed:
+- Perplexity findings: ${workflow.perplexity_results.summary}
+- Matched innovators: ${workflow.matched_innovators.length} found
+
+Question: Do we have enough valuable information to share an initial update?
+
+Criteria:
+- At least 1 concrete vendor/solution identified
+- Clear enough to be actionable
+- Provides value even if incomplete
+
+Return JSON:
+{
+  "hasValueToShare": boolean,
+  "findings": {
+    "summary": "brief summary",
+    "innovators": [...],
+    "nextSteps": "what's happening next"
+  },
+  "reasoning": "why this meets/doesn't meet threshold"
+}`;
+    
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      messages: [{role: 'user', content: prompt}]
+    });
+    
+    const decision = JSON.parse(response.content[^0].text);
+    
+    // Log decision in workflow
+    await logDecision(workflowId, 'initial_findings_evaluation', decision);
+    
+    return decision;
+  }
+  
+  // LLM Decision Point 2
+  async processExpertResponse(workflowId: string, expertResponse: any) {
+    const workflow = await getWorkflow(workflowId);
+    
+    const prompt = `Process community expert feedback.
+
+Original request: "${workflow.request_description}"
+
+Existing findings: ${JSON.stringify(workflow.matched_innovators)}
+
+Expert response: "${expertResponse.recommendation}"
+
+Tasks:
+1. Does this recommendation add value? (vs what we already found)
+2. Should we ask: "Do you have a contact there we can connect with?"
+3. Should we update the user about this?
+
+Return JSON:
+{
+  "addedValue": boolean,
+  "needsFollowUp": boolean,
+  "followUpQuestion": "exact question" or null,
+  "hasContactIntro": boolean,
+  "contactInfo": {...} or null,
+  "shouldUpdateUser": boolean
+}`;
+    
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      messages: [{role: 'user', content: prompt}]
+    });
+    
+    const decision = JSON.parse(response.content[^0].text);
+    await logDecision(workflowId, 'expert_response_evaluation', decision);
+    
+    return decision;
+  }
+}
+```
+
+**State Management:**
+All state stored in `solution_workflows` table:
+
+- Current step
+- Accumulated research results
+- Pending tasks array
+- Decision log (JSONB array of all LLM decisions)
+
+**Events Published:**
+
+- `solution.initial_findings`
+- `solution.research_complete`
+- `solution.demand_signal`
+
+**Tasks Created:**
+
+- Community requests for expert insights
+- Follow-up research tasks if gaps identified
+
+**Debugging:** `solution_workflows.conversation_log` contains complete decision history:
+
+```json
+[
+  {
+    "step": "initial_research",
+    "decision": "sufficient_to_share",
+    "reasoning": "Found 2 matched innovators with high relevance",
+    "timestamp": "2025-10-14T10:30:00Z"
+  },
+  {
+    "step": "expert_response_1",
+    "decision": "ask_followup",
+    "followUpQuestion": "Do you have a contact at Vendor X?",
+    "reasoning": "Expert mentioned specific vendor not in our database",
+    "timestamp": "2025-10-14T14:20:00Z"
+  }
+]
+```
+
+
+#### **Intro Agent** (Event Handlers, not persistent agent)
+
+**Purpose:** Facilitate introduction workflows between users.
+
+**Trigger Events:**
+
+- `intro.opportunity_created`
+- `user.intro_inquiry`
+- `intro.accepted`
+
+**Handler Pattern:**
+
+```typescript
+// Not a single long-running agent, but event handlers
+
+async function handleIntroOpportunityCreated(event: Event) {
+  const {connectorUserId, prospectInfo, innovatorId} = event.payload;
+  
+  // 1. Create intro_contexts record
+  const contextId = await supabase.from('intro_contexts').insert({
+    intro_opportunity_id: event.aggregate_id,
+    user_id: connectorUserId,
+    talking_points: await generateTalkingPoints(prospectInfo, innovatorId),
+    status: 'created'
+  });
+  
+  // 2. Add to user's priorities (via Account Manager)
+  await publishEvent({
+    eventType: 'priority.intro_added',
+    aggregateId: connectorUserId,
+    payload: {introId: event.aggregate_id, priority: 'high'}
+  });
+}
+
+async function handleUserIntroInquiry(event: Event) {
+  const {userId, introId, userQuestion} = event.payload;
+  
+  // 1. Load intro context
+  const context = await getIntroContext(introId);
+  
+  // 2. Generate answer using LLM
+  const answer = await generateIntroAnswer(context, userQuestion);
+  
+  // 3. Update context with user sentiment
+  await updateIntroContext(introId, {
+    user_questions: [...context.user_questions, userQuestion],
+    user_sentiment: detectSentiment(userQuestion)
+  });
+  
+  // 4. Send to Concierge for delivery
+  await publishEvent({
+    eventType: 'message.send.requested',
+    aggregateId: userId,
+    payload: {structuredData: answer, priority: 'immediate'}
+  });
+}
+
+async function handleIntroAccepted(event: Event) {
+  const {introId, userId} = event.payload;
+  
+  // 1. Generate unique intro email
+  const introEmail = await generateIntroEmail(introId);
+  
+  // 2. Call scheduling function
+  await scheduleIntro(introId, introEmail);
+  
+  // 3. Create follow-up task
+  await createAgentTask({
+    taskType: 'intro_followup_check',
+    agentType: 'intro_handler',
+    scheduledFor: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    contextJson: {introId}
+  });
+}
+```
+
+**Context Storage:**
+`intro_contexts` table stores accumulated state:
+
+- Talking points (why connector should care)
+- User questions asked
+- User sentiment (interested/hesitant/declined)
+
+**No Persistent Agent:** Each event handler completes independently.
+
+#### **Innovator Agent**
+
+**Purpose:** Primary interface for innovator users (replaces Concierge for this user segment).
+
+**Trigger Events:**
+
+- `user.message.received` WHERE `user.poc_agent_type = 'innovator'`
+
+**Responsibilities:**
+All Concierge capabilities PLUS:
+
+- Help create innovator profile
+- Manage prospect list uploads
+- Report on intro progress
+- Handle credit funding
+
+**Inherits:** Concierge system prompt + innovator-specific context
+
+**Tools Available:**
+
+See section 4.3 for complete tool documentation. Innovator has access to:
+
+**All 5 Concierge tools:**
+- `publish_community_request`
+- `request_solution_research`
+- `create_intro_opportunity`
+- `store_user_goal`
+- `record_community_response`
+
+**Plus 4 innovator-specific tools:**
+- `update_innovator_profile` - Update solution description, target customers, pricing
+- `upload_prospects` - Generate secure upload link for prospect list
+- `check_intro_progress` - Report on pending introduction status
+- `request_credit_funding` - Generate payment link for credit purchases
+
+**Re-engagement:** Follows the same LLM judgment pattern as Concierge - task-processor creates system message, Innovator agent decides whether/what to say based on full context.
+
+
+#### **Agent of Humans** (Request Routing System)
+
+**Purpose:** Route questions to expert humans asynchronously.
+
+**NOT an LLM agent** - this is request matching logic that coordinates between requesters and experts.
+
+**Architectural Decision: Event-Handler, Not Traditional Agent**
+
+*Why NOT a traditional agent:* Community request routing is deterministic matching logic, not personality-driven conversation. Making it an event-handler keeps it simple and reduces cognitive load on the Concierge.
+
+*Implementation:* Agent of Humans is implemented as event-handling logic in the event-processor service (packages/services/event-processor/src/handlers/user-events.ts:84-227). It listens for `community.request_needed` events via PostgreSQL NOTIFY.
+
+*Division of Responsibilities:*
+- **Concierge** (traditional agent): Classifies user intent, publishes events, presents opportunities tactfully
+- **Agent of Humans** (event handler): Creates community_requests, matches experts, routes to Account Managers
+- **Account Manager** (traditional agent): Creates user_priorities for experts, decides when to surface them
+
+*Rationale:* Keeping routing logic out of the Concierge prevents overwhelming it with database queries and matching algorithms. Concierge stays focused on personality and service quality.
+
+---
+
+### End-to-End Community Request Lifecycle
+
+This section documents the complete 15-step lifecycle of a community request from initial question through response delivery and close-the-loop feedback.
+
+#### **Step 1: User Makes Request**
+
+**Actor:** User 1 (requester) via Concierge or Account Manager
+
+**Trigger:** User asks a question that requires expert insight
+
+```typescript
+// Example: User asks Concierge
+User: "What's the best CRM for a Series A SaaS company?"
+
+// Concierge uses tool calling - LLM decides to invoke publish_community_request tool
+// Tool execution publishes event
+await publishEvent({
+  event_type: 'community.request_needed',
+  aggregate_id: user.id,
+  aggregate_type: 'user',
+  payload: {
+    requestingAgentType: 'concierge',
+    requestingUserId: user.id,
+    contextId: conversationId,
+    contextType: 'conversation',
+    question: 'What is the best CRM for a Series A SaaS company?',
+    category: 'sales_tools',
+    expertiseNeeded: ['saas', 'crm', 'sales_tools']
+  },
+  created_by: 'concierge_agent'
+});
+```
+
+**Implemented:** ✅ (packages/agents/concierge/src/index.ts:328-343)
+
+---
+
+#### **Step 2: Agent of Humans Routes Request**
+
+**Actor:** Event Processor (event-processor service)
+
+**Trigger:** `community.request_needed` event published
+
+**Processing:**
+
+```typescript
+export async function handleCommunityQuestionAsked(event: Event) {
+  // 1. Check for duplicate recent requests (7-day window)
+  const duplicates = await supabase
+    .from('community_requests')
+    .eq('category', payload.category)
+    .overlaps('expertise_needed', payload.expertiseNeeded)
+    .gte('created_at', sevenDaysAgo)
+    .eq('status', 'open');
+
+  if (duplicates.length > 0) {
+    // Attach to existing request
+    await publishNotificationEvent('community.request_attached', ...);
+    return;
+  }
+
+  // 2. Find qualified experts (verified users with matching expertise)
+  const experts = await supabase
+    .from('users')
+    .select('id, first_name, last_name, expertise')
+    .eq('verified', true)
+    .overlaps('expertise', payload.expertiseNeeded)
+    .limit(5);
+
+  // ARCHITECTURAL DECISION: Create request even if no experts found
+  // Log for monitoring but don't block request creation
+  if (!experts || experts.length === 0) {
+    console.log(`No experts found - creating request for future fulfillment`);
+    await supabase.from('events').insert({
+      event_type: 'community.no_experts_found',
+      aggregate_id: payload.category || 'unknown',
+      aggregate_type: 'community_request',
+      payload: { category, expertiseNeeded, question },
+      created_by: 'event_processor'
+    });
+  }
+
+  const expertIds = experts ? experts.map(e => e.id) : [];
+
+  // 3. Create community_request record (ALWAYS, even with 0 experts)
+  const request = await supabase.from('community_requests').insert({
+    requesting_agent_type: payload.requestingAgentType,
+    requesting_user_id: payload.requestingUserId,
+    context_id: payload.contextId,
+    context_type: payload.contextType,
+    question: payload.question,
+    category: payload.category,
+    expertise_needed: payload.expertiseNeeded,
+    target_user_ids: expertIds, // Empty array if no experts found yet
+    status: 'open',
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  });
+
+  // 4. Create agent_tasks for each expert's Account Manager (only if experts exist)
+  if (expertIds.length > 0) {
+    const tasks = experts.map(expert => ({
+      task_type: 'community_request_available',
+      agent_type: 'account_manager',
+      user_id: expert.id,
+      context_id: request.id,
+      context_type: 'community_request',
+      scheduled_for: new Date(),
+      priority: 'medium',
+      context_json: { requestId: request.id, question, category, expertiseNeeded }
+    }));
+
+    await supabase.from('agent_tasks').insert(tasks);
+  } else {
+    console.log(`Request created for future fulfillment (no experts currently available)`);
+  }
+
+  // 5. Publish routing event
+  await supabase.from('events').insert({
+    event_type: 'community.request_routed',
+    aggregate_id: request.id,
+    aggregate_type: 'community_request',
+    payload: {
+      requestId: request.id,
+      expertsNotified: experts.length,
+      expertUserIds: expertIds
+    }
+  });
+}
+```
+
+**Architectural Decision: Create Requests Even Without Experts**
+
+*Original Plan:* Early return when no experts found (don't create community_requests record).
+
+*Problem:* Users had no visibility into their requests, couldn't see request history, and requests were lost if no experts existed at that moment.
+
+*New Approach:* Always create the community_requests record, even with empty `target_user_ids` array.
+
+*Benefits:*
+1. **User History**: All requests visible in community_requests table with `requesting_user_id`
+2. **Future Fulfillment**: When experts join later or add relevant expertise, requests can be matched retroactively
+3. **Context Awareness**: Concierge can load and tactfully reference outstanding requests
+4. **Metrics**: Platform team can see demand for expertise areas that lack experts
+
+*Implementation Notes:*
+- Event `community.no_experts_found` still published for monitoring
+- No agent_tasks created if no experts (nothing to route yet)
+- Request expires after 7 days regardless
+- Users can cancel via Concierge: "Actually, I don't need that anymore"
+
+**Cancellation Capability:**
+
+Users can cancel outstanding requests through natural conversation with Concierge.
+
+```typescript
+// Concierge detects cancellation intent and executes action
+{
+  type: 'cancel_community_request',
+  params: { request_id: 'uuid' }
+}
+
+// Handler in twilio-webhook (packages/services/twilio-webhook/src/index.ts:484-504)
+await supabase
+  .from('community_requests')
+  .update({
+    status: 'cancelled',
+    closed_loop_at: new Date().toISOString(),
+    closed_loop_message: 'Cancelled by user - no longer needed'
+  })
+  .eq('id', action.params.request_id);
+
+// Also mark user_priorities as cancelled
+await supabase
+  .from('user_priorities')
+  .update({ status: 'cancelled' })
+  .eq('item_type', 'community_request')
+  .eq('item_id', action.params.request_id);
+```
+
+**Implemented:** ✅ (packages/services/event-processor/src/handlers/user-events.ts:84-227)
+
+---
+
+#### **Step 3: Task Processor Picks Up Tasks**
+
+**Actor:** Task Processor (scheduled pg_cron every 2 minutes)
+
+**Processing:**
+
+```sql
+-- Fetch pending tasks
+SELECT * FROM agent_tasks
+WHERE status = 'pending'
+  AND scheduled_for <= now()
+  AND task_type = 'community_request_available'
+FOR UPDATE SKIP LOCKED
+LIMIT 10;
+```
+
+**Implemented:** ✅ (task-processor service polls agent_tasks)
+
+---
+
+#### **Step 4: Account Manager Processes Request**
+
+**Actor:** Account Manager Agent
+
+**Trigger:** `community_request_available` task
+
+**Processing:**
+
+```typescript
+// Account Manager adds community request to user_priorities table
+async function handleCommunityRequestAvailable(task: AgentTask) {
+  const { requestId } = task.context_json;
+
+  // Fetch full request details
+  const request = await supabase
+    .from('community_requests')
+    .select('*')
+    .eq('id', requestId)
+    .single();
+
+  // Calculate priority score using LLM
+  // - Matches user's expertise?
+  // - Urgency of request?
+  // - Credits offered?
+  // - User's response history?
+
+  const priority = await calculatePriorityScore(task.user_id, request);
+
+  // Add to user_priorities
+  await supabase.from('user_priorities').insert({
+    user_id: task.user_id,
+    priority_rank: priority.rank,
+    item_type: 'community_request',
+    item_id: requestId,
+    value_score: priority.score,
+    status: 'active'
+  });
+
+  // Mark task as complete
+  return { success: true };
+}
+```
+
+**Implemented:** ❌ (task handler is stub in packages/services/task-processor/src/handlers/index.ts:44-47)
+
+---
+
+#### **Step 5: Concierge Presents Request to Expert**
+
+**Actor:** Concierge Agent (User 2/3)
+
+**Trigger:** User sends next message, Concierge checks priorities
+
+**Processing:**
+
+```typescript
+// When expert (User 2) sends any message, Concierge loads priorities
+const priorities = await supabase
+  .from('user_priorities')
+  .select('*')
+  .eq('user_id', user.id)
+  .eq('status', 'active')
+  .order('priority_rank', { ascending: true })
+  .limit(5);
+
+// If top priority is community_request, present it
+if (priorities[0].item_type === 'community_request') {
+  const request = await supabase
+    .from('community_requests')
+    .select('*')
+    .eq('id', priorities[0].item_id)
+    .single();
+
+  // Render community request using LLM
+  const message = await renderCommunityRequest({
+    requestId: request.id,
+    question: request.question,
+    category: request.category,
+    context: 'A member needs expert insight',
+    creditsOffered: 25,
+    urgency: 'medium'
+  }, anthropic);
+
+  // Send to user
+  return {
+    immediateReply: true,
+    messages: [message],
+    actions: [{
+      type: 'mark_priority_presented',
+      params: { priorityId: priorities[0].id }
+    }]
+  };
+}
+```
+
+**Implemented:** ✅ Partial (concierge/src/index.ts:415-474 checks priorities, renderCommunityRequest exists)
+
+---
+
+#### **Step 6: Expert Responds with Insight**
+
+**Actor:** User 2 (expert) via SMS
+
+**Trigger:** User replies to Concierge with expert insight
+
+```
+Expert (User 2): "We use HubSpot for our Series A. It's expensive but the integrations are worth it. Salesforce is overkill at that stage."
+```
+
+**Processing:** Concierge receives message, needs to detect this is a community response.
+
+```typescript
+// Concierge checks conversation context
+const lastPresentedPriority = await getLastPresentedCommunityRequest(user.id, conversation.id);
+
+if (lastPresentedPriority && lastPresentedPriority.awaitingResponse) {
+  // This is likely a response to community request
+  const isResponse = await detectCommunityResponse(message.content, anthropic);
+
+  if (isResponse) {
+    // Record response in community_responses table
+    await recordCommunityResponse(lastPresentedPriority.requestId, user.id, message.content);
+  }
+}
+```
+
+**Implemented:** ❌ (no response detection or recording logic exists)
+
+---
+
+#### **Step 7: Record Response in Database**
+
+**Actor:** Concierge Agent
+
+**Processing:**
+
+```typescript
+async function recordCommunityResponse(requestId: string, expertUserId: string, verbatimAnswer: string) {
+  // Summarize response using LLM
+  const responseSummary = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 300,
+    messages: [{
+      role: 'user',
+      content: `Summarize this expert insight concisely (2-3 sentences):\n\n${verbatimAnswer}`
+    }]
+  });
+
+  // Insert into community_responses
+  const response = await supabase
+    .from('community_responses')
+    .insert({
+      request_id: requestId,
+      user_id: expertUserId,
+      response_text: responseSummary.content[0].text,
+      verbatim_answer: verbatimAnswer,
+      status: 'provided'
+    })
+    .select()
+    .single();
+
+  // Update request responses_count
+  await supabase
+    .from('community_requests')
+    .update({
+      responses_count: supabase.rpc('increment', { row_id: requestId }),
+      status: 'responses_received'
+    })
+    .eq('id', requestId);
+
+  return response;
+}
+```
+
+**Implemented:** ❌ (no response recording logic)
+
+---
+
+#### **Step 8: Publish Response Event**
+
+**Actor:** Concierge Agent (after recording response)
+
+**Processing:**
+
+```typescript
+// Publish community.response_received event
+await publishEvent({
+  event_type: 'community.response_received',
+  aggregate_id: response.id,
+  aggregate_type: 'community_response',
+  payload: {
+    responseId: response.id,
+    requestId: requestId,
+    expertUserId: expertUserId,
+    responseSummary: response.response_text
+  },
+  created_by: 'concierge_agent'
+});
+```
+
+**Implemented:** ❌ (no event publishing)
+
+---
+
+#### **Step 9: Route Response to Requesting Agent**
+
+**Actor:** Event Processor
+
+**Trigger:** `community.response_received` event
+
+**Processing:**
+
+```typescript
+export async function handleCommunityResponseReceived(event: Event) {
+  const { requestId, responseId } = event.payload;
+
+  // Fetch request to identify requesting agent
+  const request = await supabase
+    .from('community_requests')
+    .select('*')
+    .eq('id', requestId)
+    .single();
+
+  // Route based on requesting agent type
+  switch (request.requesting_agent_type) {
+    case 'solution_saga':
+      // Create task for Solution Saga to process response
+      await createAgentTask({
+        task_type: 'process_community_response',
+        agent_type: 'solution_saga',
+        user_id: request.requesting_user_id,
+        context_id: request.context_id, // solution_workflow_id
+        context_type: 'solution_workflow',
+        scheduled_for: new Date(),
+        priority: 'medium',
+        context_json: {
+          responseId,
+          requestId
+        }
+      });
+      break;
+
+    case 'concierge':
+      // Notify requester's Account Manager
+      await createAgentTask({
+        task_type: 'community_response_available',
+        agent_type: 'account_manager',
+        user_id: request.requesting_user_id,
+        context_id: responseId,
+        context_type: 'community_response',
+        scheduled_for: new Date(),
+        priority: 'high',
+        context_json: { responseId, requestId }
+      });
+      break;
+  }
+}
+```
+
+**Implemented:** ❌ (no handler exists)
+
+---
+
+#### **Step 10: Requesting Agent Processes Response**
+
+**Actor:** Solution Saga or Account Manager (depending on requester)
+
+**Processing:**
+
+```typescript
+// Solution Saga evaluates response usefulness
+async function processCommunityResponse(task: AgentTask) {
+  const { responseId, requestId } = task.context_json;
+
+  // Fetch workflow and response
+  const workflow = await supabase
+    .from('solution_workflows')
+    .select('*')
+    .eq('id', task.context_id)
+    .single();
+
+  const response = await supabase
+    .from('community_responses')
+    .select('*')
+    .eq('id', responseId)
+    .single();
+
+  // Use LLM to score usefulness (1-10)
+  const usefulnessScore = await evaluateResponseUsefulness(
+    workflow.request_description,
+    response.response_text,
+    anthropic
+  );
+
+  // Update response with score
+  await supabase
+    .from('community_responses')
+    .update({
+      usefulness_score: usefulnessScore,
+      impact_description: usefulnessScore >= 7
+        ? 'Valuable insight that influenced research direction'
+        : 'Helpful context but not actionable'
+    })
+    .eq('id', responseId);
+
+  // If valuable, award credits
+  if (usefulnessScore >= 7) {
+    await awardCommunityResponseCredits(response.user_id, responseId, usefulnessScore);
+  }
+
+  // Incorporate into workflow
+  await incorporateInsightIntoWorkflow(workflow.id, response);
+}
+```
+
+**Implemented:** ❌ (no handler exists)
+
+---
+
+#### **Step 11: Award Credits to Expert**
+
+**Actor:** Solution Saga or Account Manager
+
+**Processing:**
+
+```typescript
+async function awardCommunityResponseCredits(
+  expertUserId: string,
+  responseId: string,
+  usefulnessScore: number
+) {
+  // Calculate credits based on usefulness (15-50 credits)
+  const baseCredits = 15;
+  const bonusCredits = Math.floor((usefulnessScore - 7) * 10); // 0-30 bonus
+  const totalCredits = baseCredits + bonusCredits;
+
+  // Create credit event (idempotent)
+  await supabase.from('credit_events').insert({
+    user_id: expertUserId,
+    event_type: 'community_response',
+    amount: totalCredits,
+    reference_type: 'community_response',
+    reference_id: responseId,
+    idempotency_key: `community_response_${responseId}`,
+    description: `Expert insight (usefulness: ${usefulnessScore}/10)`,
+    created_by: 'system',
+    processed: true
+  });
+
+  // Update response status
+  await supabase
+    .from('community_responses')
+    .update({
+      credits_awarded: totalCredits,
+      credited_at: new Date(),
+      status: 'rewarded'
+    })
+    .eq('id', responseId);
+}
+```
+
+**Implemented:** ❌ (no credit awarding logic)
+
+---
+
+#### **Step 12: Deliver Response to Original Requester**
+
+**Actor:** Account Manager for User 1 (original requester)
+
+**Processing:**
+
+```typescript
+// Account Manager creates priority for requester
+await supabase.from('user_priorities').insert({
+  user_id: originalRequesterId,
+  priority_rank: 1, // High priority
+  item_type: 'community_response',
+  item_id: responseId,
+  value_score: 90,
+  status: 'active'
+});
+
+// Concierge presents to User 1
+const message = await renderCommunityResponse({
+  expertName: 'Sarah',
+  question: originalQuestion,
+  insight: response.response_text,
+  creditsAwarded: 25
+}, anthropic);
+
+// Send to user
+```
+
+**Implemented:** ❌ (no response delivery to requester)
+
+---
+
+#### **Step 13: Close-the-Loop Notification to Expert**
+
+**Actor:** Account Manager for expert (User 2/3)
+
+**Trigger:** When requesting agent marks response as useful
+
+**Processing:**
+
+```typescript
+// Create close-the-loop task
+await createAgentTask({
+  task_type: 'notify_expert_of_impact',
+  agent_type: 'account_manager',
+  user_id: expertUserId,
+  context_id: responseId,
+  context_type: 'community_response',
+  scheduled_for: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h delay
+  priority: 'low',
+  context_json: {
+    responseId,
+    impactDescription: 'Your CRM insight helped a Series A founder make a decision',
+    creditsAwarded: 25
+  }
+});
+
+// Account Manager adds to priorities
+// Concierge delivers message
+const message = "Your insight about HubSpot vs Salesforce helped a Series A founder make their CRM decision. You earned 25 credits!";
+```
+
+**Implemented:** ❌ (no close-the-loop notification)
+
+---
+
+#### **Step 14: Track Request Closure**
+
+**Actor:** Cloud Scheduler → Event Processor (automated, runs every hour)
+
+**Trigger:** Google Cloud Scheduler job `close-expired-community-requests`
+
+**Processing:**
+
+```typescript
+// Runs every hour via Cloud Scheduler calling:
+// POST /close-expired-requests on event-processor service
+
+export async function closeExpiredCommunityRequests() {
+  // 1. Find expired requests (7+ days old)
+  const expiredRequests = await supabase
+    .from('community_requests')
+    .select('*')
+    .eq('status', 'open')
+    .lte('expires_at', new Date().toISOString());
+
+  // 2. Find fully-responded requests (all experts have answered)
+  const fullyRespondedRequests = await findFullyRespondedRequests();
+
+  // 3. Close all qualifying requests
+  for (const request of [...expiredRequests, ...fullyRespondedRequests]) {
+    // Update request status
+    await supabase
+      .from('community_requests')
+      .update({
+        status: 'closed',
+        closed_loop_at: new Date(),
+        closed_loop_message: 'Request closed - thank you to all experts who contributed.'
+      })
+      .eq('id', request.id);
+
+    // Update all responses
+    await supabase
+      .from('community_responses')
+      .update({
+        status: 'closed_loop',
+        closed_loop_at: new Date()
+      })
+      .eq('request_id', request.id);
+
+    // Expire related priorities
+    await supabase
+      .from('user_priorities')
+      .update({ status: 'expired' })
+      .eq('item_type', 'community_request')
+      .eq('item_id', request.id);
+  }
+}
+```
+
+**Implementation:**
+- ✅ Closure logic: `packages/services/event-processor/src/handlers/community-closure.ts`
+- ✅ Endpoint: `POST /close-expired-requests` on event-processor service
+- ✅ Scheduler: Google Cloud Scheduler job (runs every hour at :00)
+- ✅ Setup script: `scripts/setup-community-closure-scheduler.sh`
+
+**Why Cloud Scheduler instead of pg_cron?**
+- No dependency on Supabase extensions
+- Easier monitoring via Cloud Console
+- Built-in retry logic and error handling
+- Can call any HTTP endpoint
+- Free tier: 3 jobs/month
+
+**Verification:**
+```bash
+# Check scheduler status
+gcloud scheduler jobs describe close-expired-community-requests --location=us-central1
+
+# Manual trigger
+curl -X POST https://event-processor-82471900833.us-central1.run.app/close-expired-requests
+
+# Health check
+curl https://event-processor-82471900833.us-central1.run.app/community-requests-health
+```
+
+**Implemented:** ✅ (deployed Oct 18, 2025)
+
+---
+
+#### **Step 15: Analytics and Monitoring**
+
+**Metrics to Track:**
+
+- Community request volume by category
+- Average expert response time
+- Expert response rate (% of requests that get responses)
+- Average usefulness score by expert
+- Credits earned per expert
+- Request-to-response completion rate
+
+**Implemented:** ❌ (no analytics dashboards yet)
+
+---
+
+### Implementation Status Summary
+
+**Last Updated:** October 18, 2025
+
+| Step | Component | Status | Location |
+|------|-----------|--------|----------|
+| 1. User makes request | Concierge publishes event | ✅ Implemented | concierge/src/index.ts:379-396 |
+| 2. Agent routes to experts | Event processor creates tasks | ✅ Implemented | event-processor/src/handlers/user-events.ts:84-225 |
+| 3. Task processor picks up | Task processor polls | ✅ Implemented | task-processor service |
+| 4. Account Manager prioritizes | Task handler adds to priorities | ✅ Implemented | task-processor/src/handlers/community.ts:26-150 |
+| 5. Concierge presents to expert | Priority surfacing + rendering | ✅ Implemented | concierge/src/index.ts:466-525 |
+| 6. Expert responds | Response detection | ✅ Implemented | concierge/src/community-response.ts:80-135 |
+| 7. Record response | Database insert + summarize | ✅ Implemented | concierge/src/community-response.ts:143-237 |
+| 8. Publish response event | Event publishing | ✅ Implemented | concierge/src/community-response.ts:214-229 |
+| 9. Route to requesting agent | Event handler creates tasks | ✅ Implemented | event-processor/src/handlers/system-events.ts:187-273 |
+| 10. Process response | LLM evaluation + scoring | ✅ Implemented | task-processor/src/handlers/community.ts:158-369 |
+| 11. Award credits | Credit event insertion | ✅ Implemented | task-processor/src/handlers/community.ts:271-329 |
+| 12. Deliver to requester | Concierge renders response | ✅ Implemented | concierge/src/message-renderer.ts:199-237 |
+| 13. Close-the-loop to expert | Impact notification | ✅ Implemented | task-processor/src/handlers/community.ts:454-520 |
+| 14. Track closure | Cloud Scheduler + closure logic | ✅ Implemented | event-processor/src/handlers/community-closure.ts |
+| 15. Analytics | Monitoring dashboards | ❌ Not implemented | Future work |
+
+**13 of 15 steps implemented and deployed** 🎉
+
+---
+
+### Missing Components to Implement
+
+1. **Task Handler: `community_request_available`**
+   - Account Manager adds community request to priorities
+   - Calculates priority score using LLM
+
+2. **Concierge: Detect Community Response**
+   - After presenting community request, track if next user message is a response
+   - Use LLM to classify message as response vs. unrelated
+
+3. **Concierge: Record Community Response**
+   - Insert into `community_responses` table
+   - Summarize response using LLM
+   - Publish `community.response_received` event
+
+4. **Event Handler: `community.response_received`**
+   - Route response to requesting agent (Solution Saga, Account Manager, etc.)
+   - Create appropriate agent_task
+
+5. **Task Handler: `process_community_response`** (Solution Saga)
+   - Evaluate response usefulness using LLM
+   - Update `community_responses` with score
+   - Award credits if useful
+
+6. **Task Handler: `community_response_available`** (Account Manager for requester)
+   - Add response to requester's priorities
+   - Format for Concierge delivery
+
+7. **Task Handler: `notify_expert_of_impact`**
+   - Send close-the-loop message to expert
+   - Acknowledge their contribution
+
+8. **Automated Request Closure**
+   - pg_cron job to close expired requests (7 days)
+   - Mark all associated responses as closed
+
+---
+
+### Event Types to Add
+
+```typescript
+// In packages/shared/src/types/events.ts
+export type EventType =
+  | ...
+  | 'community.response_received'
+  | 'community.request_closed'
+  | 'community.expert_notified_of_impact';
+
+export interface CommunityResponseReceivedPayload {
+  responseId: string;
+  requestId: string;
+  expertUserId: string;
+  responseSummary: string;
+}
+
+export interface CommunityRequestClosedPayload {
+  requestId: string;
+  totalResponses: number;
+  closedReason: 'expired' | 'sufficient_responses' | 'manual';
+}
+```
+
+---
+
+
+#### **Social Butterfly Agent / Demand Agent**
+
+**Purpose:** Research prospects and find connection paths.
+
+**Trigger Events:**
+
+- `prospect.research_needed`
+
+**Processing (stateless function):**
+
+```typescript
+async function researchProspect(event: Event) {
+  const {prospectId, innovatorId, researchType} = event.payload;
+  
+  if (researchType === 'linkedin_mutual_connections') {
+    // 1. Call LinkedIn Actor API (Apify)
+    const mutualConnections = await apify.call('linkedin-profile-scraper', {
+      profileUrl: prospect.linkedin_url,
+      findMutualConnectionsWith: founderLinkedInUrl
+    });
+    
+    // 2. Store results
+    await supabase.from('prospects').update({
+      mutual_connections: mutualConnections,
+      last_researched_at: new Date()
+    }).eq('id', prospectId);
+    
+    // 3. Match mutual connections to users
+    const matchedUsers = await supabase
+      .from('users')
+      .select('id, first_name, linkedin_url')
+      .in('linkedin_url', mutualConnections.map(c => c.profileUrl));
+    
+    // 4. Create intro_opportunities for each match
+    for (const user of matchedUsers) {
+      await supabase.from('intro_opportunities').insert({
+        connector_user_id: user.id,
+        prospect_id: prospectId,
+        innovator_id: innovatorId,
+        prospect_name: prospect.name,
+        bounty_credits: 50,
+        status: 'open'
+      });
+    }
+    
+    // 5. Publish completion event
+    await publishEvent({
+      eventType: 'prospect.research_complete',
+      aggregateId: prospectId,
+      payload: {
+        mutualConnectionsFound: mutualConnections.length,
+        platformUsersFound: matchedUsers.length
+      }
+    });
+  }
+}
+```
+
+**No Persistence:** Function executes and terminates. Results stored in `prospects` and `intro_opportunities` tables.
+
+***
+
+** 4.3: Agent Context Management Strategy
+
+Stateless Design with Prompt Caching:
+
+Agents do not maintain in-memory state between invocations. Each agent call:
+- Loads fresh context from database (ensures data consistency)
+- Uses Claude's Prompt Caching to reduce cost and latency​
+- Executes and terminates (no persistent processes)
+
+Cacheable Context Components:
+- System prompts (static, ~4000 tokens)
+- User profiles (updated infrequently, ~500 tokens)
+- Conversation history (updated per message, up to 3000 tokens)
+- User priorities (updated every 6h, ~1000 tokens)
+
+
+***
+
+## 5. Message Orchestrator
+
+### 5.1 Purpose
+
+**Central rate limiting and priority management** for all outbound messages. All agents must use Message Orchestrator to send messages to users - never call Twilio directly.
+
+> **Implementation Note (October 2025):** The MessageOrchestrator class is deployed as a Cloud Run service with an HTTP wrapper (`src/server.ts`) that provides:
+> - **GET /health** - Health check endpoint for Cloud Run
+> - **POST /schedule-message** - API endpoint for agents to queue messages
+> - **Background processor** - Runs processDueMessages() every 30 seconds via setInterval
+>
+> The wrapper is necessary because Cloud Run requires HTTP services to bind to the PORT environment variable. The core MessageOrchestrator class logic remains unchanged and can still be imported as a library.
+
+### 5.2 Core Logic
+
+```typescript
+class MessageOrchestrator {
+  // Queue message for delivery
+  async queueMessage(params: {
+    userId: string,
+    agentId: string,
+    messageData: any, // Structured data from agent
+    priority: 'urgent' | 'high' | 'medium' | 'low',
+    canDelay: boolean,
+    requiresFreshContext: boolean
+  }) {
+    // 1. Check if user is currently active (sent message in last 10 min)
+    const userActive = await this.isUserActive(params.userId);
+    
+    // 2. Calculate scheduled time
+    let scheduledFor = new Date();
+    if (!userActive && !params.canDelay === false) {
+      scheduledFor = await this.calculateOptimalSendTime(params.userId);
+    }
+    
+    // 3. Insert into message_queue
+    const messageId = await supabase.from('message_queue').insert({
+      user_id: params.userId,
+      agent_id: params.agentId,
+      message_data: params.messageData,
+      priority: params.priority,
+      scheduled_for: scheduledFor,
+      status: 'queued',
+      requires_fresh_context: params.requiresFreshContext
+    });
+    
+    return messageId;
+  }
+  
+  // Process due messages (called by cron every minute)
+  async processDueMessages() {
+    const dueMessages = await supabase
+      .from('message_queue')
+      .select('*, users(*)')
+      .eq('status', 'queued')
+      .lte('scheduled_for', new Date())
+      .order('priority', 'scheduled_for')
+      .limit(50);
+    
+    for (const msg of dueMessages) {
+      await this.attemptDelivery(msg);
+    }
+  }
+  
+  async attemptDelivery(message: QueuedMessage) {
+    // 1. Check rate limits
+    const canSend = await this.checkRateLimits(message.user_id);
+    if (!canSend.allowed) {
+      // Reschedule for next available slot
+      await this.rescheduleMessage(message.id, canSend.nextAvailableAt);
+      return;
+    }
+    
+    // 2. Check quiet hours (unless user just sent message)
+    const userActive = await this.isUserActive(message.user_id);
+    if (!userActive) {
+      const inQuietHours = await this.isQuietHours(message.user_id);
+      if (inQuietHours) {
+        await this.rescheduleMessage(message.id, this.getQuietHoursEnd(message.user_id));
+        return;
+      }
+    }
+    
+    // 3. If requires fresh context, check relevance
+    if (message.requires_fresh_context) {
+      const stillRelevant = await this.checkMessageRelevance(message);
+      if (!stillRelevant.relevant) {
+        await this.supersededMessage(message.id, stillRelevant.reason);
+        
+        if (stillRelevant.shouldReformulate) {
+          await this.requestReformulation(message);
+        }
+        return;
+      }
+    }
+    
+    // 4. Render message (if not already rendered)
+    if (!message.final_message) {
+      const rendered = await this.renderMessage(message);
+      await supabase.from('message_queue').update({
+        final_message: rendered
+      }).eq('id', message.id);
+      message.final_message = rendered;
+    }
+    
+    // 5. Send via Twilio
+    const twilioResponse = await this.sendSMS(message);
+    
+    // 6. Record in messages table
+    const messageRecord = await supabase.from('messages').insert({
+      conversation_id: message.users.conversation_id,
+      user_id: message.user_id,
+      role: message.agent_id.split('_')[^0], // Extract agent type
+      content: message.final_message,
+      direction: 'outbound',
+      twilio_message_sid: twilioResponse.sid,
+      status: 'sent'
+    });
+    
+    // 7. Update budget
+    await this.incrementMessageBudget(message.user_id);
+    
+    // 8. Mark queue item as sent
+    await supabase.from('message_queue').update({
+      status: 'sent',
+      sent_at: new Date(),
+      delivered_message_id: messageRecord.id
+    }).eq('id', message.id);
+  }
+  
+  async checkRateLimits(userId: string): Promise<{allowed: boolean, nextAvailableAt?: Date}> {
+    // Get or create today's budget
+    const budget = await supabase
+      .from('user_message_budget')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('date', new Date().toISOString().split('T')[^0])
+      .single();
+    
+    if (!budget) {
+      await supabase.from('user_message_budget').insert({
+        user_id: userId,
+        date: new Date().toISOString().split('T')[^0]
+      });
+      return {allowed: true};
+    }
+    
+    // Check daily limit
+    if (budget.messages_sent >= budget.daily_limit) {
+      return {
+        allowed: false,
+        nextAvailableAt: new Date(new Date().setDate(new Date().getDate() + 1))
+      };
+    }
+    
+    // Check hourly limit
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentMessages = await supabase
+      .from('messages')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('direction', 'outbound')
+      .gte('created_at', oneHourAgo.toISOString())
+      .count();
+    
+    if (recentMessages.count >= budget.hourly_limit) {
+      return {
+        allowed: false,
+        nextAvailableAt: new Date(budget.last_message_at.getTime() + 60 * 60 * 1000)
+      };
+    }
+    
+    return {allowed: true};
+  }
+  
+  async checkMessageRelevance(message: QueuedMessage): Promise<{
+    relevant: boolean,
+    shouldReformulate: boolean,
+    reason: string
+  }> {
+    // Get user's most recent messages
+    const recentMessages = await supabase
+      .from('messages')
+      .select('content, role, created_at')
+      .eq('user_id', message.user_id)
+      .gte('created_at', message.created_at) // Messages AFTER this was queued
+      .order('created_at', 'desc')
+      .limit(5);
+    
+    if (recentMessages.length === 0) {
+      return {relevant: true, shouldReformulate: false, reason: 'no_new_context'};
+    }
+    
+    // Use LLM to classify relevance
+    const prompt = `Classify queued message relevance.
+
+Queued message (waiting to send): ${JSON.stringify(message.message_data)}
+
+User's messages since this was queued:
+${recentMessages.map(m => `${m.role}: ${m.content}`).join('\n')}
+
+Classification:
+- RELEVANT: Message still makes sense in current context
+- STALE: User changed topic, message no longer appropriate
+- CONTEXTUAL: Message provides helpful context for user's new question
+
+Return JSON:
+{
+  "classification": "RELEVANT" | "STALE" | "CONTEXTUAL",
+  "shouldReformulate": boolean,
+  "reason": "brief explanation"
+}`;
+    
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      messages: [{role: 'user', content: prompt}]
+    });
+    
+    const decision = JSON.parse(response.content[^0].text);
+    
+    return {
+      relevant: decision.classification !== 'STALE',
+      shouldReformulate: decision.shouldReformulate,
+      reason: decision.reason
+    };
+  }
+  
+  async renderMessage(message: QueuedMessage): Promise<string> {
+    // Call Concierge to render structured data into prose
+    const conciergePrompt = `Convert this structured update into a conversational message.
+
+User context: ${JSON.stringify(message.users)}
+
+Structured data: ${JSON.stringify(message.message_data)}
+
+Generate natural, warm message in concierge voice.`;
+    
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      messages: [{role: 'user', content: conciergePrompt}]
+    });
+    
+    return response.content[^0].text;
+  }
+}
+```
+
+
+### 5.3 Rate Limiting Rules
+
+**Default Limits (per user):**
+
+- Daily: 10 messages max
+- Quiet hours: 10pm - 8am user local time (unless user active in last 10 min)
+
+**Exception:** User sent inbound message in last 10 minutes → override quiet hours and max messages, deliver queued messages if relevant
+
+### 5.4 Priority Lanes
+
+**Urgent (immediate delivery):**
+
+- User is actively conversing (sent message <10 min ago)
+- Critical system notifications (payment issues, account problems)
+
+**High (next available slot):**
+
+- Intro acceptances
+- High-value solution matches
+- Community requests to experts
+
+**Medium (scheduled optimally):**
+
+- Solution research updates
+- Weekly summaries
+- New intro opportunities
+
+**Low (defer if queue full):**
+
+- Tips and educational content
+- Network updates
+
+***
+
+## 6. Cloud Run Architecture
+
+### 6.1 Service Overview
+
+**Infrastructure:** Google Cloud Run containers running Node.js/TypeScript services.
+
+**Services:**
+
+1. **twilio-webhook** - HTTP endpoint for inbound SMS, synchronously invokes agent packages
+   - **Purpose:** Handles all user-facing inbound messages (<3s latency requirement)
+   - **Scaling:** Scales to zero when idle
+   - **Key characteristic:** Calls agent packages DIRECTLY (not event-driven)
+
+2. **sms-sender** - Listens for outbound message events via database trigger
+   - **Purpose:** Sends SMS via Twilio API
+   - **Scaling:** Min instances: 1 (always-on to prevent delivery delays)
+
+3. **realtime-processor** - WebSocket subscriber for background events only
+   - **Purpose:** Handles background events (priority.update, etc.), NOT inbound messages
+   - **Scaling:** Min instances: 1 (persistent WebSocket connection)
+   - **Key characteristic:** Only processes events published by background agents
+
+4. **task-processor** - Polls for scheduled tasks every 30 seconds
+   - **Purpose:** Executes scheduled agent tasks (re-engagement, reviews, etc.)
+   - **Implemented as:** HTTP service with Cloud Scheduler cron trigger
+
+5. **event-processor** - Handles system events
+   - **Purpose:** Routes events to appropriate handlers
+   - **Scaling:** Scales to zero when idle
+
+6. **message-orchestrator** - Manages outbound message queue
+   - **Purpose:** Rate limiting, quiet hours, priority-based scheduling
+   - **Implemented as:** HTTP service with Cloud Scheduler cron trigger (every 1 minute)
+
+### 6.2 Entry Points
+
+#### Twilio Webhook Handler - Synchronous Message Processing
+
+**Service:** `twilio-webhook` (HTTP endpoint, scales to zero)
+**URL:** https://twilio-webhook-82471900833.us-central1.run.app/sms
+**Purpose:** Receives inbound SMS and processes them synchronously for <3s response time
+
+**Flow:**
+```
+1. Twilio → POST /sms webhook
+2. Find/create user and conversation
+3. Record inbound message in database
+4. Directly invoke agent package (Bouncer or Concierge)
+5. Agent returns response immediately
+6. Write response to messages table (status='pending')
+7. Return 200 OK to Twilio
+8. Database trigger → SMS Sender picks up and sends
+```
+
+**Implementation:**
+```typescript
+// packages/services/twilio-webhook/src/index.ts
+app.post('/sms', validateTwilioSignature, async (req, res) => {
+  const {From, Body, MessageSid} = req.body;
+
+  // 1. Find or create user and conversation
+  const user = await findOrCreateUser(From);
+  const conversation = await findOrCreateConversation(user);
+
+  // 2. Record inbound message
+  const message = await supabase.from('messages').insert({
+    conversation_id: conversation.id,
+    user_id: user.id,
+    role: 'user',
+    content: Body,
+    direction: 'inbound',
+    twilio_message_sid: MessageSid,
+    status: 'delivered'
+  }).select().single();
+
+  // 3. Update conversation timestamp
+  await supabase.from('conversations').update({
+    last_message_at: new Date(),
+    updated_at: new Date()
+  }).eq('id', conversation.id);
+
+  // 4. SYNCHRONOUSLY invoke appropriate agent
+  let agentResponse;
+  if (!user.verified) {
+    // Call Bouncer agent package directly
+    agentResponse = await invokeBouncerAgent(message, user, conversation);
+  } else if (user.poc_agent_type === 'concierge') {
+    // Call Concierge agent package directly
+    agentResponse = await invokeConciergeAgent(message, user, conversation);
+  } else if (user.poc_agent_type === 'innovator') {
+    // Call Innovator agent (extends Concierge)
+    agentResponse = await invokeInnovatorAgent(message, user, conversation);
+  }
+
+  // 5. If agent wants immediate reply, write to database
+  if (agentResponse.immediateReply && agentResponse.message) {
+    await supabase.from('messages').insert({
+      conversation_id: conversation.id,
+      user_id: user.id,
+      role: user.poc_agent_type,
+      content: agentResponse.message,
+      direction: 'outbound',
+      status: 'pending' // SMS Sender will pick this up
+    });
+  }
+
+  // 6. Execute any actions returned by agent
+  if (agentResponse.actions) {
+    for (const action of agentResponse.actions) {
+      await executeAction(action, user.id, conversation.id);
+    }
+  }
+
+  // 7. Return empty TwiML (agent already responded)
+  res.status(200).type('text/xml').send('<?xml version="1.0"?><Response></Response>');
+});
+```
+
+**Why Synchronous:** Users expect <3s response time. Event-based processing would add latency and complexity for no benefit on the critical path.
+
+
+
+
+
+#### SMS Sender (Database Trigger + Cloud Run Listener)
+
+```sql
+-- Database trigger fires for outbound messages
+CREATE OR REPLACE FUNCTION notify_send_sms()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.direction = 'outbound' AND NEW.status = 'pending' THEN
+    PERFORM pg_notify('send_sms', row_to_json(NEW)::text);
+
+    UPDATE messages
+    SET status = 'queued_for_send'
+    WHERE id = NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_message_send
+  AFTER INSERT ON messages
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_send_sms();
+```
+
+```typescript
+// Cloud Run service listens for send_sms notifications
+supabase
+  .channel('send-sms')
+  .on(
+    'postgres_changes',
+    {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'messages',
+      filter: 'status=eq.queued_for_send'
+    },
+    async (payload) => {
+      const message = payload.new;
+
+      // Get conversation for phone number
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('phone_number')
+        .eq('id', message.conversation_id)
+        .single();
+
+      // Send via Twilio
+      const twilioMessage = await twilio.messages.create({
+        to: conversation.phone_number,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        body: message.content
+      });
+
+      // Update message record
+      await supabase.from('messages').update({
+        twilio_message_sid: twilioMessage.sid,
+        status: 'sent',
+        sent_at: new Date()
+      }).eq('id', message.id);
+    }
+  )
+  .subscribe();
+```
+
+
+### 6.3 Scheduled Background Processors
+
+#### Scheduled Task Processor (pg_cron)
+
+Runs every 2 minutes to process due agent tasks. This is ONLY for background tasks, NOT user-facing messages.
+
+```sql
+-- Runs every 2 minutes for scheduled tasks
+SELECT cron.schedule(
+  'process-scheduled-tasks',
+  '*/2 * * * *',
+  $$
+    SELECT process_tasks_batch();
+  $$
+);
+
+CREATE OR REPLACE FUNCTION process_tasks_batch()
+RETURNS void AS $$
+DECLARE
+  task RECORD;
+BEGIN
+  FOR task IN
+    SELECT * FROM agent_tasks
+    WHERE status = 'pending'
+      AND scheduled_for <= now()
+    ORDER BY
+      CASE priority
+        WHEN 'urgent' THEN 1
+        WHEN 'high' THEN 2
+        WHEN 'medium' THEN 3
+        WHEN 'low' THEN 4
+      END,
+      scheduled_for ASC
+    LIMIT 50
+    FOR UPDATE SKIP LOCKED
+  LOOP
+    -- Publish event for real-time processor to handle
+    INSERT INTO events (event_type, aggregate_id, payload, created_by)
+    VALUES (
+      'agent.task_ready',
+      task.id,
+      jsonb_build_object(
+        'task_id', task.id,
+        'task_type', task.task_type,
+        'agent_type', task.agent_type,
+        'context', task.context_json
+      ),
+      'scheduled_task_processor'
+    );
+
+    UPDATE agent_tasks
+    SET status = 'processing'
+    WHERE id = task.id;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**Tasks processed by this cron:**
+- **Re-engagement checks**: Task-processor creates system messages with context (attemptCount, priorities, etc.) → Agent (Bouncer/Concierge/Innovator) receives and uses LLM judgment to decide whether/what to say
+- **Account Manager processing**: Runs every 6 hours to update user_priorities
+- **Solution workflow timeouts**: Check if expert responses overdue
+- **Conversation summarization**: Periodic context compression
+- **Intro follow-ups**: Scheduled reminder tasks
+
+**Not processed by this cron:** User messages (handled by Real-Time Message Processor via database triggers)
+
+**Re-engagement Architecture (October 19, 2025):**
+
+Task-processor does NOT craft hardcoded messages. Instead:
+1. Creates system message with re-engagement context JSON
+2. Agent receives it like any other message
+3. Agent builds special system prompt for re-engagement scenario
+4. LLM uses full judgment based on context, conversation history, missing fields/priorities
+
+Implementation: `packages/services/task-processor/src/handlers/reengagement.ts`
+
+
+#### Message Queue Processor (pg_cron)
+
+Runs every 1 minute to process queued outbound messages.
+
+```sql
+SELECT cron.schedule(
+  'process-message-queue',
+  '* * * * *', -- Every minute
+  $$
+    SELECT process_outbound_messages();
+  $$
+);
+
+CREATE OR REPLACE FUNCTION process_outbound_messages()
+RETURNS void AS $$
+DECLARE
+  msg RECORD;
+BEGIN
+  FOR msg IN
+    SELECT mq.*, u.*
+    FROM message_queue mq
+    JOIN users u ON mq.user_id = u.id
+    WHERE mq.status = 'queued'
+      AND mq.scheduled_for <= now()
+    ORDER BY
+      CASE mq.priority
+        WHEN 'urgent' THEN 1
+        WHEN 'high' THEN 2
+        WHEN 'medium' THEN 3
+        WHEN 'low' THEN 4
+      END,
+      mq.scheduled_for ASC
+    LIMIT 20
+    FOR UPDATE SKIP LOCKED
+  LOOP
+    -- Publish to real-time processor for delivery
+    INSERT INTO events (event_type, aggregate_id, payload)
+    VALUES (
+      'message.ready_to_send',
+      msg.id,
+      row_to_json(msg)::jsonb
+    );
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**Messages processed:**
+- Scheduled updates (queued for optimal send time)
+- Messages delayed due to quiet hours
+- Messages waiting for rate limit slots
+
+
+### 6.4 Event Processing Latency Requirements
+
+**Real-Time Path (User-Facing):**
+
+- **Trigger:** User sends SMS → Twilio webhook → Database INSERT
+- **Processing:** Database trigger → PostgreSQL NOTIFY → Cloud Run subscription
+- **Target Latency:** <3 seconds from SMS received to agent response sent
+- **Implementation:** Supabase Realtime subscriptions (WebSocket connections)
+- **Cost:** Included in Supabase plan
+
+**Scheduled Path (Background Tasks):**
+
+- **Trigger:** pg_cron schedule
+- **Processing:** Batch query of due tasks → publish to event bus → Cloud Run processors
+- **Frequencies:**
+  - Message queue: Every 1 minute
+  - Scheduled tasks: Every 2 minutes
+  - Account Manager: Every 6 hours
+- **Latency:** 1-60 seconds (acceptable for non-urgent background work)
+- **Cost:** $0 - uses existing database compute
+
+**Why Dual-Path Approach:**
+
+1. **User messages need instant response** - database triggers provide sub-second notification
+2. **Background tasks don't need instant processing** - 1-2 minute polling is efficient
+3. **Separates concerns** - real-time service handles urgent, cron handles batch
+4. **Cost-effective** - no expensive polling, leverage included Supabase Realtime features
+5. **Cron not in critical path** - only processes background tasks where delays are acceptable
+
+In Summary: 
+
+User-Facing Messages (Direct Invocation)
+- Trigger: User sends SMS → Twilio webhook
+- Processing: Synchronous agent invocation within webhook handler
+- Target Latency: <2 seconds from SMS received to response sent
+- Implementation: Direct function calls, no event bus
+- Rationale: Sub-second response critical for conversational UX
+
+Background Workflows (Event-Driven)
+- Trigger: Scheduled tasks (pgcron) or system events
+- Processing: Events table → Event processor → Agent execution  
+- Target Latency: 1-60 seconds acceptable
+- Implementation: Event sourcing pattern
+- Rationale: Reliability and audit trail more important than speed
+
+
+### 6.5 Deployment Architecture
+
+**Cloud Run Services:**
+
+1. **Realtime Message Processor** (always-on container)
+   - Min instances: 1
+   - Maintains WebSocket connections to Supabase
+   - Processes all user-facing messages
+   - Handles immediate agent responses
+
+2. **Twilio Webhook Handler** (HTTP endpoint)
+   - Min instances: 0 (scales from zero)
+   - Receives inbound SMS
+   - Records message in database (triggers real-time processing)
+
+3. **SMS Sender** (always-on container)
+   - Min instances: 1
+   - Listens for outbound message events
+   - Calls Twilio API
+   - Updates delivery status
+
+**Database Services (Supabase PostgreSQL):**
+
+- pg_cron for scheduled task processing
+- Database triggers for real-time event notification
+- LISTEN/NOTIFY for pub/sub messaging
+
+**Scaling Strategy:**
+
+- Cloud Run services auto-scale based on CPU/memory
+- Database connection pooling (pgBouncer in Supabase)
+- At SMS-based scale, single instance handles all traffic
+- Horizontal scaling triggers at >70% CPU sustained
+
+***
+
+## 7. Implementation Phases
+
+### Phase 1: MVP (Weeks 1-4)
+
+**Goal:** Core onboarding and basic conversation functionality.
+
+**Features:**
+- Bouncer agent (user onboarding via SMS)
+- Concierge agent (basic conversation)
+- Twilio SMS integration
+- Supabase database setup
+- Real-time message processing
+
+**Success Criteria:**
+- New user can complete onboarding via SMS
+- Verified user can ask questions and get responses
+- Messages delivered <3 seconds
+
+### Phase 2: Solution Research (Weeks 5-8)
+
+**Goal:** Enable solution discovery workflows.
+
+**Features:**
+- Solution Saga orchestration
+- Perplexity API integration
+- Community Request system
+- Agent of Humans routing
+- Account Manager (basic priority calculation)
+
+**Success Criteria:**
+- User can request solution research
+- System reaches out to community for insights
+- User receives initial findings within 24 hours
+
+### Phase 3: Intro Workflows (Weeks 9-12)
+
+**Goal:** Enable professional introductions.
+
+**Features:**
+- Social Butterfly / Demand Agent
+- LinkedIn integration (Apify)
+- Intro opportunity creation
+- Intro acceptance workflow
+- Credit system (basic)
+
+**Success Criteria:**
+- User can receive intro opportunities
+- User can accept/reject intros
+- Credits awarded for completed intros
+
+### Phase 4: Polish & Scale (Weeks 13-16)
+
+**Goal:** Production-ready platform.
+
+**Features:**
+- Message Orchestrator (rate limiting, quiet hours)
+- Message queue processing
+- Conversation summarization
+- Cost optimization (prompt caching)
+- Analytics dashboard
+
+**Success Criteria:**
+- Users respect rate limits
+- No message fatigue complaints
+- System runs within budget
+- All sagas complete successfully
+
+***
+
+## 8. Cost Estimates
+
+### Monthly Costs (100 active users)
+
+**Supabase (Pro Plan):** $25/month
+- PostgreSQL database
+- Realtime subscriptions
+- pg_cron
+- Unlimited API requests
+
+**Google Cloud Run:** ~$50/month
+- 3 services (2 always-on, 1 scale-to-zero)
+- Estimated: 720 hours/month × 2 services × $0.024/vCPU-hour
+
+**Twilio:** ~$200/month
+- Assuming 10 messages/user/month
+- 1,000 messages × $0.0079/message (A2P 10DLC)
+- 1 phone number × $2/month
+
+**Anthropic Claude API:** ~$300/month
+- Assuming 20 LLM calls/user/month
+- 2,000 calls × 2000 tokens avg × $0.003/1K input + $0.015/1K output
+- With prompt caching: ~40% reduction = $180/month
+
+**Perplexity API:** ~$50/month
+- Solution research only
+- Estimated 50 searches/month × $1/search // this is wrong... "Search API costs $5 per 1,000 requests with no additional token charges"
+
+**Total:** // need to calculate
+
+**At 1,000 users:** // need to calculate
+
+**At 10,000 users:** // need to calculate
+
+***
+
+## 9. Security & Compliance
+
+### Data Security
+
+- All data encrypted at rest (Supabase default)
+- TLS encryption for all API calls
+- Service keys stored in Cloud Secret Manager
+- Row-level security policies in Supabase
+
+### Privacy
+
+- User phone numbers hashed for analytics
+- Conversation history retained for context, purged after 1 year
+- No data sold to third parties
+- Compliance with CCPA/GDPR (user data export/deletion available)
+
+### SMS Compliance
+
+- A2P 10DLC registration required (Twilio)
+- Opt-out handling: "STOP" keyword support
+- Rate limiting prevents spam classification
+- Message content reviewed for compliance
+
+***
+
+## 10. Monitoring & Observability
+
+### Key Metrics
+
+**User Engagement:**
+- Daily active users (DAU)
+- Messages sent/received per user
+- Onboarding completion rate
+- Time to first value (solution match, intro)
+
+**System Performance:**
+- Message delivery latency (p50, p95, p99)
+- Agent LLM call latency
+- Error rates by agent type
+- Database query performance
+
+**Cost Tracking:**
+- LLM token usage per agent
+- Twilio message costs
+- Cloud Run CPU/memory usage
+
+### Alerts
+
+- Message delivery failures >5%
+- Agent processing errors >2%
+- Database CPU >80% for >5 minutes
+- Daily cost exceeds $50 (budget alert)
+
+### Logging
+
+- All agent decisions logged with reasoning
+- Event sourcing provides audit trail
+- LLM calls logged in `agent_actions_log`
+- Twilio webhook logs for SMS delivery
+
+***
+
+## 11. Future Enhancements
+
+### Phase 5+ (Post-MVP)
+
+**Mobile App:**
+- Native iOS/Android apps
+- Push notifications
+- Rich media support (images, videos)
+
+**Multi-Channel:**
+- WhatsApp Business API
+- iMessage Business Chat
+- Email fallback
+
+**Advanced Features:**
+- Group conversations (intros with multiple parties)
+- Event discovery and invitations
+- Document sharing and collaboration
+- Video pitch integration (innovators)
+
+**AI Enhancements:**
+- Voice support (call transcription)
+- Sentiment analysis for user mood detection
+- Predictive engagement (proactive outreach timing)
+- Custom agent personalities per user preference
+
+***
+
+## 12. References & Footnotes
+
+[^1]: PostgreSQL as a Queue: https://www.crunchydata.com/blog/message-queuing-using-native-postgresql
+[^2]: FOR UPDATE SKIP LOCKED pattern: https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/
+[^3]: Supabase Realtime: https://supabase.com/docs/guides/realtime
+[^4]: Event Sourcing: https://martinfowler.com/eaaDev/EventSourcing.html
+[^5]: Saga Pattern: https://microservices.io/patterns/data/saga.html
+[^6]: LLM Agents with Decision Points: https://www.anthropic.com/research/building-effective-agents
+[^7]: Prompt Caching: https://docs.anthropic.com/claude/docs/prompt-caching
+[^8]: Google Cloud Run: https://cloud.google.com/run/docs
+
+***
+
+## Appendix A: Implementation Notes - October 2025
+
+### A.1 Architectural Simplifications During Initial Build
+
+During the initial implementation of the system (October 15-16, 2025), we encountered persistent issues with Supabase Realtime WebSocket subscriptions timing out. After extensive troubleshooting, we made two key architectural changes to simplify the system and ensure reliability.
+
+#### A.1.1 Change 1: Direct Agent Invocation in Twilio Webhook
+
+**Original Design (Section 6.2):**
+```
+SMS → twilio-webhook → event published → realtime-processor (WebSocket) → agent invoked
+```
+
+**Implemented Architecture:**
+```
+SMS → twilio-webhook → agent directly invoked → response written to database
+```
+
+**Why We Changed:**
+- Supabase Realtime subscriptions on the `messages` table consistently timed out
+- Attempted fixes included: enabling Realtime on tables, verifying publication settings, adjusting RLS policies, adding connection parameters
+- None of the fixes resolved the timeout issues
+- Direct invocation provides faster response (<1 second vs 2-3 seconds) and eliminates the Realtime dependency
+
+**Implementation Details:**
+- `twilio-webhook` service now includes agent invocation logic (Bouncer, Concierge, Innovator)
+- Agents are invoked synchronously after recording the inbound message
+- Agent responses are written directly to the `messages` table with `status='pending'`
+- This bypasses the event-driven architecture for inbound message processing
+- Code location: `/packages/services/twilio-webhook/src/index.ts` functions `invokeBouncerAgent()`, `invokeConciergeAgent()`, `invokeInnovatorAgent()`
+
+**Trade-offs:**
+- ✅ More reliable (no WebSocket dependency)
+- ✅ Faster response time
+- ✅ Simpler debugging (synchronous call stack)
+- ❌ Tighter coupling between webhook and agents
+- ❌ Loses event sourcing for inbound message processing
+- ❌ Real-time processor service becomes unused for this path
+
+**Future Consideration:**
+- If Supabase Realtime issues are resolved (new version, configuration fix, plan upgrade), we can revert to the event-driven approach
+- The event-driven pattern is still used for background tasks (solution workflows, community requests, scheduled tasks)
+
+---
+
+#### A.1.2 Change 2: Database Triggers with pg_net for SMS Sending
+
+**Original Design (Section 6.2):**
+```
+Agent writes message → messages INSERT → Realtime subscription → sms-sender service → Twilio API
+```
+
+**Implemented Architecture:**
+```
+Agent writes message → messages INSERT → pg_net database trigger → sms-sender webhook → Twilio API
+```
+
+**Why We Changed:**
+- Same Realtime subscription timeout issues affected the `sms-sender` service
+- Polling approach (querying every 2 seconds) was wasteful and added latency
+- Database triggers with `pg_net` HTTP POST provide true event-driven behavior without WebSocket dependency
+
+**Implementation Details:**
+- Database trigger fires when `status='pending'` AND `direction='outbound'`
+- Trigger uses Supabase's `pg_net` extension to make HTTP POST to Cloud Run endpoint
+- `sms-sender` service refactored from Realtime subscriber to Express HTTP server
+- Webhook endpoint: `POST /send-sms` receives message data and sends via Twilio
+- Code locations:
+  - SQL trigger: `send_sms_on_message_insert` function and trigger
+  - Service: `/packages/services/sms-sender/src/index.ts`
+
+**SQL Trigger Implementation:**
+```sql
+CREATE OR REPLACE FUNCTION public.send_sms_webhook()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  request_id bigint;
+  payload jsonb;
+BEGIN
+  payload := jsonb_build_object(
+    'type', TG_OP,
+    'table', TG_TABLE_NAME,
+    'record', row_to_json(NEW),
+    'old_record', NULL
+  );
+
+  SELECT net.http_post(
+    url := 'https://sms-sender-[id].us-central1.run.app/send-sms',
+    headers := '{"Content-Type": "application/json"}'::jsonb,
+    body := payload
+  ) INTO request_id;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER send_sms_on_message_insert
+  AFTER INSERT ON public.messages
+  FOR EACH ROW
+  WHEN (NEW.status = 'pending' AND NEW.direction = 'outbound')
+  EXECUTE FUNCTION public.send_sms_webhook();
+```
+
+**Trade-offs:**
+- ✅ True event-driven (immediate trigger on INSERT)
+- ✅ No polling overhead
+- ✅ No WebSocket connection to maintain
+- ✅ Scales to zero when idle (Cloud Run)
+- ✅ Simple to debug (HTTP request logs)
+- ❌ Depends on `pg_net` extension availability
+- ❌ Less portable across database providers
+- ⚠️ Requires trigger to have correct Cloud Run URL (deployment-specific)
+
+**Future Consideration:**
+- Database triggers are more reliable than Realtime subscriptions for our use case
+- This pattern should be preferred for critical paths even if Realtime issues are resolved
+- Consider using this trigger pattern for other high-priority event handlers
+
+---
+
+### A.2 Current Service Architecture (As Implemented)
+
+**Cloud Run Services:**
+
+1. **twilio-webhook** (HTTP endpoint, scales from zero)
+   - Receives inbound SMS from Twilio
+   - Validates webhook signature
+   - Records message in database
+   - **Directly invokes agent** based on user state (NEW)
+   - Agent response written to messages table
+
+2. **sms-sender** (HTTP endpoint, scales from zero)
+   - **Receives webhook calls from database trigger** (NEW)
+   - Fetches conversation for phone number
+   - Sends SMS via Twilio API
+   - Updates message status
+
+3. **realtime-processor** (currently unused for primary flows)
+   - Originally intended for message and event processing
+   - May be repurposed for background task processing
+   - Consider deprecating if not needed
+
+**Database-Driven Flows:**
+
+```
+Inbound SMS Flow:
+  Twilio → twilio-webhook → DB insert → agent invocation → response in DB → trigger → sms-sender → Twilio API
+
+Background Task Flow (still event-driven):
+  pg_cron → agent_tasks query → event published → (future: event processor)
+```
+
+---
+
+### A.3 Lessons Learned
+
+**What Worked:**
+- Direct agent invocation provides reliable, fast responses
+- Database triggers with `pg_net` are more reliable than Realtime subscriptions
+- Cloud Run scales-to-zero works well for webhook-based architecture
+- Simplifying the critical path improved reliability significantly
+
+**What Didn't Work:**
+- Supabase Realtime WebSocket subscriptions consistently timed out
+- Multiple troubleshooting attempts (RLS, publications, filters, connection params) did not resolve issues
+- Polling approach added latency and wasted resources
+
+**Recommendations for Future Implementations:**
+1. **Prefer database triggers over Realtime subscriptions** for critical paths
+2. **Use Realtime for non-critical updates** (dashboards, analytics) where timeouts are acceptable
+3. **Validate Realtime stability** in your Supabase instance before building dependencies
+4. **Keep critical paths synchronous** when possible (easier to debug, more predictable)
+5. **Use event-driven architecture for background tasks** but not for user-facing interactions requiring <3s response
+
+---
+
+### A.4 Remaining Alignment with Original Design
+
+Despite these changes, the system still adheres to core design principles:
+
+✅ **Event Sourcing:** Events table still records all significant actions (agent decisions, task creations)
+✅ **Saga Pattern:** Solution workflows and intro workflows still use event-driven state machines
+✅ **Stateless Agents:** Agents still load context fresh on each invocation
+✅ **Message Orchestration:** Rate limiting and priority management still needed (future work)
+✅ **Agent Separation:** Background agents (Account Manager, Solution Saga) still output structured data only
+
+**What Changed:**
+- Inbound message processing is synchronous instead of event-driven
+- SMS sending uses database triggers instead of Realtime subscriptions
+- Critical user-facing paths bypass the event bus for reliability
+
+---
+
+### A.5 Prompt Engineering Learnings - Bouncer Agent Personality (October 16, 2025)
+
+After deploying the Bouncer agent, we discovered the initial prompt was producing overly effusive, sales-y responses that didn't match the desired "selective gatekeeper" personality. This required prompt refinement to achieve the right tone.
+
+#### Initial Problems Observed
+
+**Example Bad Response:**
+```
+User: "what is Yachtparty?"
+Bouncer: "Fair question! Yachtparty is an exclusive professional networking platform where high-quality professionals connect, share opportunities, and make meaningful business relationships. Think of it as a more curated, invitation-based alternative to traditional networking!"
+```
+
+**Issues:**
+1. ❌ Exclamation points (too enthusiastic)
+2. ❌ Generic marketing language ("exclusive professional networking platform")
+3. ❌ Over-explanatory (5 paragraphs for simple question)
+4. ❌ Eager salesperson vibe (not selective gatekeeper)
+5. ❌ Didn't use specific product messaging
+6. ❌ Volunteered too much information on first contact
+
+#### Root Causes
+
+1. **Vague tone guidance** - "Friendly but efficient" wasn't specific enough
+2. **No explicit constraints** - Didn't specify what NOT to do (exclamation points, superlatives)
+3. **Missing few-shot examples** - No concrete good/bad response examples
+4. **Generic product description** - Triggered boilerplate language from model's training
+5. **Missing model parameter tuning** - Default temperature too high, max_tokens too permissive
+
+#### Solution: Explicit Behavioral Constraints + Few-Shot Examples
+
+**Key Changes Made:**
+
+1. **Explicit "NO" rules:**
+   ```
+   - NO exclamation points (use periods)
+   - NO superlatives (exclusive, amazing, incredible, exceptional)
+   - NO marketing speak or hype language
+   - Keep responses under 2 sentences when possible
+   ```
+
+2. **Few-shot examples showing good vs. bad:**
+   ```
+   User: "hey"
+   Response: "Hey... who told you about this?"
+
+   User: "what is Yachtparty?"
+   Response: "I'm just the bouncer but here are the basics: Yachtparty helps you get the industry intros, recs, and info you need—vetted by high-level peers..."
+   ```
+
+3. **Model parameter tuning:**
+   ```typescript
+   temperature: 0.3,     // Down from default 1.0
+   max_tokens: 512,      // Down from 1024
+   ```
+
+4. **Specific product messaging in prompt:**
+   - Included exact wording to use when describing Yachtparty
+   - Prevented model from generating generic descriptions
+
+5. **Psychology of exclusivity:**
+   - First contact: "Hey... who told you about this?" (creates mystery)
+   - Don't volunteer information—make users ask
+   - "Velvet rope" positioning: make them want to get in
+
+#### Results
+
+**Example Good Response:**
+```
+User: "hey"
+Bouncer: "Hey... who told you about this?"
+
+User: "what is Yachtparty?"
+Bouncer: "I'm just the bouncer but here are the basics: Yachtparty helps you get the industry intros, recs, and info you need—vetted by high-level peers. No fees. You earn credits (like equity) for participating, and the more value you add, the more you earn. Your status and rewards grow with the community."
+```
+
+**Improvements:**
+- ✅ No exclamation points
+- ✅ Brief and direct (under 2 sentences for most responses)
+- ✅ Creates mystery and exclusivity
+- ✅ Uses specific product messaging
+- ✅ Gatekeeper tone achieved
+
+#### Recommendations for Future Agent Prompts
+
+1. **Always include explicit "NO" rules** - Vague positive guidance ("be friendly") doesn't work as well as specific negative constraints ("NO exclamation points")
+
+2. **Provide few-shot examples** - Show 3-5 examples of good responses for common scenarios
+
+3. **Tune temperature and max_tokens**:
+   - `temperature: 0.3` for consistency (professional agents)
+   - `temperature: 0.7-1.0` for creativity (content generation)
+   - Set `max_tokens` to force desired response length
+
+4. **Include exact product/brand messaging** - Don't assume model knows your product
+
+5. **Consider user psychology** - How should the agent make the user feel? Build that into tone rules.
+
+6. **Test with real users quickly** - Initial prompt assumptions often miss the mark
+
+7. **Document personality in requirements** - Specify the psychological positioning, not just functional requirements
+
+**Updated Prompt Location:** `/packages/services/twilio-webhook/src/index.ts` (lines 456-527)
+
+**Updated Requirements:** Section 4.2 - Bouncer Agent now includes full prompt engineering best practices
+
+---
+
+### Appendix C: Integration & Deployment Learnings (October 2025)
+
+**Context:** During the parallel development and integration of Account Manager, Task Processor, Event Processor, and Message Orchestrator services (October 14-16, 2025), we encountered several critical insights about multi-agent system integration, Cloud Run deployment, and production readiness.
+
+#### 1. Agent Integration Patterns
+
+**Discovery:** Background agents (like Account Manager) that don't send immediate replies require different integration patterns than conversational agents (like Bouncer/Concierge).
+
+**Learnings:**
+
+1. **Trigger Detection Functions:**
+   - Create dedicated `shouldInvokeAgent()` functions to centralize trigger logic
+   - Use multiple trigger types (message count, keywords, scheduled reviews)
+   - Return structured data about *why* the agent was triggered (for logging/debugging)
+
+   ```typescript
+   async function shouldInvokeAccountManager(
+     user: User,
+     conversation: Conversation,
+     messageContent: string
+   ): Promise<{ trigger: string | null }> {
+     // Trigger 1: Initial setup after 3rd message
+     const { count } = await supabase
+       .from('messages')
+       .select('id', { count: 'exact', head: true })
+       .eq('user_id', user.id)
+       .eq('direction', 'inbound');
+
+     if (count === 3) {
+       return { trigger: 'initial_setup' };
+     }
+
+     // Trigger 2: Explicit mentions (keywords)
+     const keywords = ['goal', 'trying to', 'working on', 'challenge'];
+     if (keywords.some(kw => messageContent.toLowerCase().includes(kw))) {
+       return { trigger: 'explicit_mention' };
+     }
+
+     // Trigger 3: Scheduled review (check last run)
+     // ... implementation
+
+     return { trigger: null };
+   }
+   ```
+
+2. **Error Isolation:**
+   - Wrap background agent invocations in try-catch blocks
+   - Log errors but don't fail the main request
+   - Background agents should be non-blocking to user experience
+
+   ```typescript
+   try {
+     await invokeAccountManagerAgent(message, user, conversation, {
+       trigger: accountManagerTrigger.trigger,
+       recentMessages: recentMessages?.reverse()
+     });
+     console.log(`✅ Account Manager completed`);
+   } catch (error) {
+     // Don't fail the whole request if Account Manager fails
+     console.error(`⚠️  Account Manager error:`, error);
+   }
+   ```
+
+3. **Context Loading:**
+   - Load recent conversation history for context
+   - Limit to last 10-20 messages (balance context vs. cost)
+   - Reverse chronological order from database → chronological for LLM
+
+   ```typescript
+   const { data: recentMessages } = await supabase
+     .from('messages')
+     .select('*')
+     .eq('conversation_id', conversation.id)
+     .order('created_at', { ascending: false })
+     .limit(20);
+
+   // Reverse for chronological order
+   await invokeAgent(message, user, conversation, {
+     recentMessages: recentMessages?.reverse()
+   });
+   ```
+
+**Recommendation:** Create a base `BackgroundAgentIntegration` pattern/interface that all background agents follow, with standardized trigger detection, error handling, and context loading.
+
+**Updated Code:** `/packages/services/twilio-webhook/src/index.ts:490-659` (Account Manager integration)
+
+---
+
+#### 2. Cloud Run Monorepo Deployment Challenges
+
+**Discovery:** Cloud Run's build system (both Dockerfile and Buildpacks) cannot resolve npm `file:` dependencies that reference parent directories in a monorepo structure.
+
+**Problem:**
+
+When deploying a service with local package dependencies:
+```json
+{
+  "@yachtparty/agent-bouncer": "file:../../agents/bouncer",
+  "@yachtparty/agent-concierge": "file:../../agents/concierge",
+  "@yachtparty/shared": "file:../../shared"
+}
+```
+
+Cloud Run uploads only the service directory, breaking these references.
+
+**Error Messages:**
+- **Buildpacks:** `npm error The 'npm ci' command can only install with an existing package-lock.json`
+- **Docker:** `npm error Cannot read properties of undefined (reading 'extraneous')`
+
+**Root Cause:**
+- Cloud Run build context is limited to the service directory
+- Parent directories (where `file:` dependencies live) are not uploaded
+- npm/pnpm cannot resolve these references during build
+
+**Solutions (in order of recommendation):**
+
+1. **Pre-build Deployment Package (Recommended for MVP):**
+   - Build all local packages before deployment
+   - Copy `dist` directories into service's `node_modules/@yachtparty/*`
+   - Deploy the modified service directory
+   - **Pros:** Simple, works immediately, no infrastructure changes
+   - **Cons:** Manual process, not suitable for CI/CD
+   - **Implementation:** See `DEPLOYMENT_BLOCKERS.md` Option 1
+
+2. **Docker Multi-Stage Build (Recommended for Production):**
+   - Set build context to monorepo root
+   - Copy entire monorepo in build stage
+   - Build all dependencies in order
+   - Copy only runtime files to production stage
+   - **Pros:** Reproducible, works with CI/CD, standard Docker workflow
+   - **Cons:** Requires Dockerfile customization per service
+   - **Implementation:** See `DEPLOYMENT_BLOCKERS.md` Option 2
+
+3. **Publish to Private npm Registry (Best Long-Term):**
+   - Publish `@yachtparty/*` packages to npm (private registry or GitHub Packages)
+   - Use semantic versioning
+   - Standard npm install during deployment
+   - **Pros:** Production-grade, enables external consumers, proper versioning
+   - **Cons:** Setup overhead, requires version management workflow
+   - **When to use:** Before opening platform to external developers
+
+4. **pnpm Workspaces with `pnpm deploy` (Alternative):**
+   - Use pnpm's monorepo tooling
+   - `pnpm deploy` creates standalone deployable packages
+   - **Pros:** Modern tooling, handles monorepos natively
+   - **Cons:** Requires migration from npm to pnpm
+
+**Current Impact:**
+- ❌ twilio-webhook: Cannot deploy updated version with Account Manager
+- ❌ task-processor: Never successfully deployed
+- ❌ event-processor: Not yet attempted
+
+**Immediate Action Required:**
+Implement Option 1 (pre-build deployment) to unblock current deployment, then plan migration to Option 2 or 3 for production.
+
+**Reference:** `/DEPLOYMENT_BLOCKERS.md` - Comprehensive deployment guide created October 16, 2025
+
+---
+
+#### 3. Database Migration Strategy for Serverless
+
+**Discovery:** Traditional migration tools (like Flyway, Liquibase, Prisma Migrate) don't fit well with Supabase's managed PostgreSQL + multiple service deployments pattern.
+
+**Challenges:**
+1. No single "application server" to run migrations from
+2. Multiple services need same database schema
+3. Supabase dashboard SQL editor is manual but reliable
+4. Service startup migrations create race conditions
+
+**Adopted Strategy: Manual SQL Files**
+
+Created `MANUAL_MIGRATIONS.sql` with:
+- Complete migration SQL (CREATE TABLE, CREATE FUNCTION, etc.)
+- Idempotent operations (`IF NOT EXISTS`, `CREATE OR REPLACE`)
+- Verification queries to confirm success
+- Test queries (optional) to validate functionality
+- Comprehensive comments explaining each migration
+
+**Example Structure:**
+```sql
+-- =====================================================
+-- MIGRATION 1: event_dead_letters table
+-- Purpose: Dead letter queue for failed events
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS event_dead_letters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id UUID NOT NULL,
+  event_type VARCHAR(100) NOT NULL,
+  payload JSONB NOT NULL,
+  error_message TEXT NOT NULL,
+  retry_count INTEGER NOT NULL,
+  original_created_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_dead_letters_event_id
+  ON event_dead_letters(event_id);
+
+-- Verification
+SELECT table_name FROM information_schema.tables
+WHERE table_name = 'event_dead_letters';
+```
+
+**Process:**
+1. Developer creates SQL file in `/packages/database/migrations/`
+2. Comprehensive SQL file created at root: `/MANUAL_MIGRATIONS.sql`
+3. Manual execution in Supabase Dashboard SQL Editor
+4. Verification queries confirm success
+5. Document migration in INTEGRATION_STATUS.md
+
+**Why This Works:**
+- ✅ Idempotent (can run multiple times safely)
+- ✅ Single source of truth (one SQL file per session)
+- ✅ Verification built-in
+- ✅ Works with Supabase's security model
+- ✅ No race conditions between services
+- ✅ Easy to review before running
+
+**Future Improvements:**
+- Create CLI tool that wraps Supabase API for programmatic migration
+- Version tracking table (`schema_migrations`) for migration history
+- Automated rollback scripts
+
+**Reference:** `/MANUAL_MIGRATIONS.sql` - Created October 16, 2025
+
+---
+
+#### 4. Prompt Caching for Cost Optimization
+
+**Discovery:** Anthropic's prompt caching feature can reduce costs by 90% for agents with large static prompts, but TypeScript types don't yet support `cache_control` parameter.
+
+**Implementation:**
+
+```typescript
+// Use @ts-ignore for cache_control (not in type definitions yet)
+const response = await anthropic.messages.create({
+  model: MODEL,
+  max_tokens: 1024,
+  system: [
+    {
+      type: 'text',
+      text: LARGE_STATIC_PROMPT,
+      // @ts-ignore - cache_control is valid but not in type definitions
+      cache_control: { type: 'ephemeral' },
+    },
+  ],
+  messages: [{ role: 'user', content: userPrompt }],
+});
+```
+
+**Cost Impact (Account Manager Example):**
+
+Without caching:
+- System prompt: ~2000 tokens × $3.00/million = $0.006 per call
+- 10 calls/day × 30 days = $1.80/month
+
+With caching (90% cache hit rate):
+- First call: $0.006 (builds cache)
+- Cached calls: $0.0006 (90% discount)
+- Average: $0.00096 per call
+- 10 calls/day × 30 days = $0.29/month
+
+**Savings: $1.51/month per agent (84% reduction)**
+
+**Best Practices:**
+1. Cache large static content (system prompts, user profiles)
+2. Place cacheable content first in messages array
+3. Use for agents with >1000 token static prompts
+4. Monitor cache hit rates via usage API
+5. Add `@ts-ignore` comments until SDK types updated
+
+**Applied To:**
+- Account Manager: System prompt (~1500 tokens)
+- Bouncer: System prompt (~1200 tokens)
+- Concierge: System prompt (~2000 tokens)
+
+**Reference:** `/packages/agents/account-manager/src/index.ts:156-174`
+
+---
+
+#### 5. Testing Infrastructure Insights
+
+**Discovery:** Testing multi-agent systems requires different strategies than traditional API testing, with focus on event flows and agent decision-making.
+
+**Test Structure Created:**
+
+```
+packages/testing/
+├── unit/              # Individual agent logic
+├── integration/       # Event flow, database interactions
+├── e2e/              # Full user journeys (SMS → response)
+└── mocks/            # Supabase, Anthropic, Twilio mocks
+```
+
+**Key Learnings:**
+
+1. **Mock LLM Responses Carefully:**
+   - Don't mock the entire Anthropic SDK
+   - Mock at the HTTP layer or create response fixtures
+   - Test prompt construction separately from LLM calls
+
+2. **Event Flow Testing:**
+   - Test that agent publishes correct events
+   - Don't test that downstream agents process them (unit test boundary)
+   - Integration tests verify full event chains
+
+3. **Database Mocking:**
+   - Use Supabase's built-in test client
+   - Reset database state between tests
+   - Avoid shared test users (creates race conditions)
+
+4. **E2E Test Flakiness:**
+   - Initial test run: 55/66 passing (83%)
+   - Failures mostly due to mock refinement needed, not code bugs
+   - Background agents require longer timeouts
+
+**Test Coverage Targets:**
+- Unit tests: 80%+ coverage
+- Integration tests: Critical event paths
+- E2E tests: Happy path + 2-3 error scenarios per agent
+
+**Reference:** `/packages/testing/` - 473 lines, 66 test cases
+
+---
+
+#### 6. Background Agent Design Patterns
+
+**Discovery:** Background agents that analyze but don't respond directly require unique design considerations.
+
+**Account Manager Pattern:**
+
+1. **Silent Operation:**
+   - Never sends messages directly to users
+   - Updates database in background
+   - Provides context to other agents when requested
+
+2. **Action-Based Design:**
+   - Agent returns array of actions to execute
+   - Actions are database operations (not messages)
+   - Each action has a `reason` field for auditability
+
+   ```typescript
+   return {
+     immediateReply: false,
+     actions: [
+       {
+         type: 'update_priority',
+         params: { priority_type: 'goal', content: 'Hire senior engineer' },
+         reason: 'Explicitly mentioned in conversation'
+       },
+       {
+         type: 'schedule_check_in',
+         params: { days_from_now: 14 },
+         reason: 'No updates in 2 weeks'
+       }
+     ]
+   };
+   ```
+
+3. **Trigger-Based Invocation:**
+   - Don't invoke on every message (expensive)
+   - Use smart triggers (message count, keywords, time intervals)
+   - Log trigger types for analysis
+
+4. **Context Provision:**
+   - Other agents can request user context
+   - Account Manager provides formatted priorities
+   - No circular dependencies (request via function call, not event)
+
+**When to Use This Pattern:**
+- Analytics/tracking agents
+- User profiling agents
+- Priority/scoring agents
+- Recommendation engines
+
+**When NOT to Use:**
+- Conversational agents that reply to users
+- Task execution agents
+- Real-time notification agents
+
+**Reference:** `/packages/agents/account-manager/` - 1,143 lines
+
+---
+
+#### 7. TypeScript in Production: Type Safety vs. Runtime Flexibility
+
+**Discovery:** Strict TypeScript can conflict with rapidly evolving LLM integrations and external APIs that update types frequently.
+
+**Challenges Encountered:**
+
+1. **Anthropic SDK Type Lag:**
+   - `cache_control` feature available in API
+   - Not yet in TypeScript type definitions
+   - Solution: Strategic `@ts-ignore` with comments
+
+2. **Database Type Mismatches:**
+   - Supabase auto-generated types don't match custom queries
+   - Complex joins return untyped `any`
+   - Solution: Create manual type definitions for critical paths
+
+3. **Event Payload Types:**
+   - Events table has `JSONB payload` column
+   - Different event types have different payload shapes
+   - Solution: Discriminated unions + type guards
+
+   ```typescript
+   type EventPayload =
+     | { type: 'user.verified'; userId: string }
+     | { type: 'conversation.started'; conversationId: string }
+     | { type: 'solution.researched'; findings: string[] };
+
+   function isUserVerifiedEvent(payload: EventPayload):
+     payload is Extract<EventPayload, { type: 'user.verified' }> {
+     return payload.type === 'user.verified';
+   }
+   ```
+
+**Recommendations:**
+
+1. **Use `@ts-ignore` sparingly but strategically:**
+   - Always include comment explaining why
+   - Link to issue/PR if type will be updated
+   - Prefer `@ts-expect-error` if possible (fails when type is fixed)
+
+2. **Create type guard utilities:**
+   - Centralize type checking logic
+   - Runtime validation for external data
+   - Generate types from JSON Schema when possible
+
+3. **Balance strictness with velocity:**
+   - Use `strict: true` in tsconfig.json
+   - Allow `any` in integration boundaries
+   - Strict types for internal business logic
+
+**Reference:**
+- `/packages/agents/account-manager/src/index.ts:164` - cache_control type override
+- `/packages/services/twilio-webhook/src/index.ts` - Event type guards
+
+---
+
+#### 8. Error Handling in Distributed Systems
+
+**Discovery:** Multi-agent systems require layered error handling strategies, with different approaches at each level.
+
+**Error Handling Layers:**
+
+1. **Agent Invocation Level (Service Boundary):**
+   ```typescript
+   try {
+     await invokeAccountManagerAgent(...);
+     console.log(`✅ Account Manager completed`);
+   } catch (error) {
+     // Don't fail request - background agent errors are non-critical
+     console.error(`⚠️  Account Manager error:`, error);
+   }
+   ```
+
+2. **Agent Internal Level (LLM Calls):**
+   ```typescript
+   try {
+     const response = await anthropic.messages.create({...});
+     // ... process response
+   } catch (error) {
+     console.error('[Account Manager] Error:', error);
+     await logAgentAction({
+       agentType: 'account_manager',
+       error: error instanceof Error ? error.message : String(error)
+     });
+
+     return { immediateReply: false, actions: [] }; // Graceful degradation
+   }
+   ```
+
+3. **Database Level (Action Execution):**
+   ```typescript
+   for (const action of actions) {
+     try {
+       await executeAction(action, userId, supabase);
+       console.log(`✅ Action executed: ${action.type}`);
+     } catch (actionError) {
+       // Log but continue with other actions
+       console.error(`❌ Action failed: ${action.type}`, actionError);
+     }
+   }
+   ```
+
+4. **Event Level (Dead Letter Queue):**
+   ```typescript
+   async function processEvent(event: Event) {
+     let retryCount = 0;
+     const maxRetries = 3;
+
+     while (retryCount < maxRetries) {
+       try {
+         await handleEvent(event);
+         return; // Success
+       } catch (error) {
+         retryCount++;
+         if (retryCount >= maxRetries) {
+           // Move to dead letter queue
+           await supabase.from('event_dead_letters').insert({
+             event_id: event.id,
+             event_type: event.event_type,
+             error_message: error.message,
+             retry_count: retryCount
+           });
+         } else {
+           // Exponential backoff
+           await sleep(Math.pow(2, retryCount) * 1000);
+         }
+       }
+     }
+   }
+   ```
+
+**Logging Strategy:**
+
+- **Console logs** for development/debugging
+- **agent_actions_log table** for LLM calls (cost, latency, tokens)
+- **event_dead_letters table** for failed events
+- **Error aggregation** (future): Send to Sentry/DataDog
+
+**Monitoring Alerts:**
+
+Set up alerts for:
+- Dead letter queue depth > 10 events
+- Agent error rate > 5% in 1 hour
+- LLM call latency > 10 seconds (p99)
+- Database query latency > 1 second
+
+**Reference:**
+- `/packages/services/event-processor/src/index.ts` - Dead letter queue implementation
+- `/packages/agents/account-manager/src/index.ts:222-240` - Error handling example
+
+---
+
+#### 9. Cost Estimation & Monitoring
+
+**Discovery:** Multi-agent systems require careful cost monitoring across multiple dimensions (LLM, compute, database).
+
+**Monthly Cost Breakdown (At Scale):**
+
+| Category | Service | Cost/Month | Notes |
+|----------|---------|------------|-------|
+| **Cloud Run** | twilio-webhook | $25 | min-instances: 1 |
+| | sms-sender | $15 | min-instances: 1 |
+| | message-orchestrator | $70 | min-instances: 1, most expensive (polling) |
+| | task-processor | $22 | min-instances: 1 |
+| | event-processor | $22 | min-instances: 1 |
+| **LLM** | Bouncer | $3-6 | 10 calls/day, with caching |
+| | Concierge | $15-45 | 50 calls/day, with caching |
+| | Account Manager | $0.30-0.90 | 10 calls/day, 90% cost reduction from caching |
+| | Message Orchestrator (rendering) | $15-60 | Template rendering via LLM |
+| **Database** | Supabase Pro | $25 | 8GB, ~500k rows |
+| **SMS** | Twilio | $0.0079/msg | Variable based on volume |
+| **Total** | | **$187-266/month** | Excluding SMS variable costs |
+
+**Cost Optimization Strategies:**
+
+1. **Prompt Caching:** 40-90% reduction on large prompts
+2. **Message Batching:** Combine multiple updates into one LLM call
+3. **Smart Triggers:** Don't invoke agents on every message
+4. **Model Selection:** Use cheaper models for simple tasks
+5. **Polling Intervals:** Increase from 10s → 30s during low traffic
+
+**Cost Monitoring:**
+
+Track in `agent_actions_log`:
+```sql
+SELECT
+  agent_type,
+  COUNT(*) as calls,
+  SUM(cost_usd) as total_cost,
+  AVG(cost_usd) as avg_cost_per_call,
+  SUM(input_tokens) as total_input_tokens,
+  SUM(output_tokens) as total_output_tokens
+FROM agent_actions_log
+WHERE created_at > NOW() - INTERVAL '30 days'
+GROUP BY agent_type
+ORDER BY total_cost DESC;
+```
+
+**Recommended Alerts:**
+- Daily LLM cost > $10 (unexpected spike)
+- Single LLM call > $0.50 (runaway generation)
+- Monthly total > $300 (budget exceeded)
+
+---
+
+#### 10. Deployment Best Practices Summary
+
+**From This Integration Session:**
+
+1. **Always build locally first:**
+   - Run `npm run build` before attempting deployment
+   - Fix TypeScript errors in local environment
+   - Test with `npm run dev` against staging database
+
+2. **Use .gcloudignore carefully:**
+   - Explicitly include package-lock.json
+   - Don't ignore tsconfig.json or other build artifacts
+   - Document non-obvious inclusions
+
+3. **Monorepo deployment requires special handling:**
+   - Pre-build packages before deploying services
+   - Consider Docker multi-stage builds for reproducibility
+   - Plan migration to private npm registry for production
+
+4. **Database migrations need manual intervention:**
+   - Create comprehensive SQL files with verification
+   - Test in local PostgreSQL before Supabase
+   - Use idempotent operations (IF NOT EXISTS, CREATE OR REPLACE)
+
+5. **Document deployment blockers immediately:**
+   - Create DEPLOYMENT_BLOCKERS.md with solutions
+   - Include cost estimates and impact analysis
+   - Provide multiple workaround options
+
+6. **Version control deployment artifacts:**
+   - Keep Dockerfile even if using buildpacks
+   - Save successful deployment configurations
+   - Document environment variables and secrets
+
+---
+
+#### 11. Production Readiness Checklist
+
+Based on integration experience, add these to deployment checklist:
+
+**Code Quality:**
+- [ ] TypeScript builds with no errors
+- [ ] All agents have error handling and logging
+- [ ] Prompt caching configured for cost optimization
+- [ ] Rate limiting implemented (message orchestrator)
+- [ ] Dead letter queue for failed events
+
+**Infrastructure:**
+- [ ] All secrets configured in Google Secret Manager
+- [ ] Environment variables documented in .env.example
+- [ ] Health check endpoints implemented (/health)
+- [ ] Graceful shutdown handlers for background polling
+
+**Database:**
+- [ ] Migrations tested in staging environment
+- [ ] Indexes created for common queries
+- [ ] RLS policies configured and tested
+- [ ] Backup strategy documented
+
+**Monitoring:**
+- [ ] agent_actions_log capturing all LLM calls
+- [ ] Error aggregation configured (Sentry/DataDog)
+- [ ] Cost monitoring dashboard created
+- [ ] Alert thresholds configured
+
+**Testing:**
+- [ ] Unit tests >80% coverage
+- [ ] Integration tests for event flows
+- [ ] E2E tests for happy paths
+- [ ] Load testing completed (if high volume expected)
+
+**Documentation:**
+- [ ] README.md updated with deployment instructions
+- [ ] INTEGRATION_STATUS.md reflects current state
+- [ ] API documentation generated (if applicable)
+- [ ] Runbooks created for common issues
+
+---
+
+### Recommendations for Future Development
+
+Based on October 2025 integration experience:
+
+1. **Adopt pnpm Workspaces** - Better monorepo support than npm/yarn, native deployment tooling
+
+2. **Set Up Private npm Registry** - Enables versioned package deployment, external developer access
+
+3. **Implement Automated Testing in CI/CD** - Current test suite (66 tests) should run on every PR
+
+4. **Create Deployment CLI** - Wrap common deployment tasks (pre-build, deploy, verify) in single command
+
+5. **Add Cost Monitoring Dashboard** - Real-time view of LLM costs by agent, model, and time period
+
+6. **Implement Circuit Breakers** - Prevent cascade failures when LLM API is slow/down
+
+7. **Create Agent Development Template** - Standardize structure for new agents (reduce setup time from 2h → 15min)
+
+8. **Document Event Schema Registry** - Central registry of all event types and their payloads
+
+9. **Set Up Staging Environment** - Separate Supabase project + Cloud Run services for testing
+
+10. **Implement Feature Flags** - Enable/disable agents without deployment (LaunchDarkly/Unleash)
+
+---
+
+**Last Updated:** October 16, 2025
+**Contributors:** Integration team, deployment debugging sessions
+**Next Review:** After deploying remaining services (task-processor, event-processor)
+
+---
+
+## 13. Deployment History & Learnings
+
+### October 16, 2025 - Email Verification & Re-engagement Bug Fixes (COMPLETED)
+
+**Services Updated:** twilio-webhook (revision 00029) ✅
+**Status:** Critical bugs resolved, email verification workflow corrected
+**Time Elapsed:** ~2 hours
+**Database Changes:** Email verification field separation (migration 008)
+
+#### Issues Fixed
+
+**1. Immediate Re-engagement Messages (CRITICAL BUG)**
+- **Problem:** Users receiving "Still there?" message within seconds of Bouncer messages
+- **Root Cause #1:** `checkOnboardingProgress()` checked `if (!user.email)` instead of `if (!user.email_verified)`
+  - This caused onboarding to complete as soon as webhook populated the email field
+  - Triggered immediate completion and Concierge transition
+- **Root Cause #2:** Bouncer returned `scheduled_hours: 24` but twilio-webhook action handler expected `scheduled_for` timestamp
+  - Defaulted to `new Date().toISOString()` (immediate execution)
+- **Root Cause #3:** New re-engagement tasks created without canceling previous pending tasks
+  - Multiple overlapping tasks accumulated
+- **Fixes Applied:**
+  - Changed line 66 in `onboarding-steps.ts`: `if (!user.email_verified) missingFields.push('email');`
+  - Modified `createReengagementTask()` to cancel existing pending tasks before creating new ones
+  - Updated twilio-webhook action handler to calculate `scheduled_for` from `scheduled_hours` parameter
+- **Files Changed:**
+  - `/packages/agents/bouncer/src/onboarding-steps.ts` (lines 66, 403-430)
+  - `/packages/services/twilio-webhook/src/index.ts` (lines 411-434)
+- **Lesson:** Always validate state transitions carefully when multiple fields track similar concepts
+
+**2. Email Verification vs Full Verification Confusion**
+- **Problem:** Email verification immediately marked users as fully verified (user.verified = true)
+- **Design Requirement:** Two-stage verification needed:
+  1. `email_verified` - automated via webhook when user sends verification email
+  2. `verified` - manual approval/LinkedIn verification before network access
+- **Solution:**
+  - Created migration `008_email_verified_field.sql` adding `email_verified` boolean column
+  - Updated webhook to only set `email_verified = true`, not `verified = true`
+  - Bouncer stays assigned (`poc_agent_type = 'bouncer'`) until manual approval
+  - Added acknowledgment message: "Got your email, thanks. Confirming also we will never sell your contact info. While everything is getting approved, what were you hoping to get out of this community?"
+- **Database Schema Change:**
+  ```sql
+  ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT FALSE;
+  CREATE INDEX idx_users_email_verified ON users(email_verified);
+  ```
+- **Lesson:** Separate technical verification (email) from business verification (network approval)
+
+**3. Data Privacy Messaging**
+- **Change:** Added privacy reassurance to email verification request
+- **New message:** "Send a quick email from your work address to verify-{userId}@verify.yachtparty.xyz. We'll never sell your contact info, just need to verify your role."
+- **File:** `/packages/agents/bouncer/src/prompts.ts` (Step 3)
+
+**4. Re-engagement Message Tone** (Attempted Update)
+- **Requested Change:** Update re-engagement message to: "Still need to get verified? I need to keep the line moving. I'm just the bouncer"
+- **Current Status:** Code updated in `/packages/services/task-processor/src/handlers/reengagement.ts` but deployment blocked
+- **Deployment Issue:** ES module packaging incompatibility
+  - task-processor uses `"type": "module"` (ES modules)
+  - Attempted to switch from direct `@supabase/supabase-js` import to `@yachtparty/shared`
+  - Node module resolution failing in Cloud Run container despite packages being copied
+- **Workaround:** Old version (pre-message-update) still running and healthy
+- **Resolution:** Deferred pending ES module packaging investigation (non-critical cosmetic change)
+
+#### Schema Changes
+
+**Migration 008: Email Verification Field**
+- **Purpose:** Separate email verification from full network approval
+- **Changes:**
+  - Added `email_verified` BOOLEAN field to users table
+  - Added index on `email_verified` for query performance
+  - Updated column comments to clarify distinction
+- **Impact:** Enables two-stage onboarding workflow
+
+#### Key Discoveries
+
+**1. Re-engagement Task Scheduling Requires Exact Parameter Matching**
+- Agents return structured actions with `params` object
+- Action handlers must check for ALL possible parameter formats
+- Example: Bouncer sends `scheduled_hours: 24`, handler must calculate `scheduled_for` timestamp
+- **Lesson:** Document action parameter schemas and validate in handlers
+
+**2. Onboarding State Machine Must Be Defensive**
+- Small logic errors in state checks cause cascading failures
+- Example: Checking wrong field (`email` vs `email_verified`) broke entire onboarding flow
+- **Lesson:** Add comprehensive test coverage for state transitions
+
+**3. Task Cancellation Prevents Accumulation**
+- Without explicit cancellation, multiple tasks for same workflow accumulate
+- **Pattern Implemented:**
+  ```typescript
+  await supabase
+    .from('agent_tasks')
+    .update({ status: 'cancelled' })
+    .eq('user_id', userId)
+    .eq('task_type', 're_engagement_check')
+    .eq('status', 'pending');
+  ```
+- **Lesson:** Always cancel obsolete tasks before creating new ones
+
+**4. ES Module Packaging in Monorepos Remains Challenging**
+- npm workspaces with `"type": "module"` packages have complex resolution
+- `file:` dependencies in package.json don't resolve in containers
+- Copying built packages to `node_modules/@yachtparty/` works for CommonJS but ES modules have different resolution rules
+- **Lesson:** Consider keeping shared packages as CommonJS for simpler deployment, or invest in proper package publishing
+
+#### Testing Recommendations
+
+**Scenarios to Test:**
+1. ✅ New user onboarding from SMS to email verification
+2. ✅ Email verification webhook triggering acknowledgment message
+3. ⏳ 24-hour re-engagement task execution (requires time travel or manual trigger)
+4. ✅ User stays with Bouncer after email verification (not switched to Concierge)
+5. ⏳ Manual approval process (currently no UI, requires direct database update)
+
+### October 16, 2025 - Cloud Run Deployment Session (COMPLETED)
+
+**Services Deployed:** task-processor, event-processor, message-orchestrator (3 of 3) ✅
+**Status:** All services successfully deployed and healthy
+**Time Elapsed:** ~4 hours total
+**Final URLs:**
+- task-processor: https://task-processor-82471900833.us-central1.run.app
+- event-processor: https://event-processor-82471900833.us-central1.run.app
+- message-orchestrator: https://message-orchestrator-82471900833.us-central1.run.app
+
+#### Key Discoveries
+
+**1. Email Verification Was Nearly Complete**
+- The Bouncer agent email verification system was 99% implemented
+- Only issue: UUID format mismatch (hyphens in generated token vs no hyphens in verification URL)
+- Fix: Single line change in `onboarding-steps.ts:182` - `crypto.randomUUID().replace(/-/g, '')`
+- **Lesson:** Verify exact format requirements for all identifiers, especially in URL parameters
+
+**2. Event-processor Handlers Already Existed**
+- Handlers were fully implemented, just had TypeScript compilation errors
+- Issues: Unused import and incorrect type assertions in handlers/index.ts
+- Fix: Removed unused `EventPayload` import, corrected type casts
+- **Lesson:** Run TypeScript compilation locally before deploying to catch simple errors
+
+**3. Monorepo Workspace Dependencies Require Full Copy Strategy**
+- Services using `workspace:*` dependencies fail with MODULE_NOT_FOUND in Cloud Run
+- Root cause: npm workspaces hoist dependencies to root, service-level node_modules are mostly empty
+- **Solution implemented:** Modified deploy-service.sh to copy ALL root node_modules to deployment directory
+- Impact: Resolved MODULE_NOT_FOUND errors for all sub-dependencies (e.g., body-parser for express)
+- **Lesson:** npm workspace hoisting requires copying entire dependency tree, not just direct dependencies
+
+**4. .gitignore Files Can Break Docker Builds**
+- Problem: .gitignore with `dist/` pattern copied to deployment directory
+- Impact: Cloud Build respected .gitignore and excluded compiled TypeScript output
+- **Solution:** Modified deploy-service.sh to exclude `.gitignore` and `.dockerignore` during rsync (line 144)
+- **Lesson:** Deployment directories should not include source control config files
+
+**5. Library Packages Need HTTP Server Wrappers for Cloud Run**
+- Problem: message-orchestrator was a library class (MessageOrchestrator), not an HTTP service
+- Cloud Run requires containers to bind to PORT environment variable
+- **Solution:** Created `src/server.ts` wrapper with Express HTTP server:
+  - GET /health endpoint for health checks
+  - POST /schedule-message endpoint for message queueing
+  - Background processor running processDueMessages() every 30 seconds
+- **Lesson:** Even background processors need HTTP interfaces for Cloud Run health checks and API access
+
+**6. Referral Tracking Requires Conversation Context for Name Disambiguation** (2025-10-16)
+- Problem: LLM confused referrer names with user's own name (e.g., user says "Ben Trenda" → LLM thought user's name was Ben)
+- Root cause: Information extraction prompt didn't have conversation history to determine intent
+- **Solution:** Enhanced `getInformationExtractionPrompt()` to include last 4 messages for context:
+  - Added explicit rules: "If YOUR last message asked 'who told you about this?' → Their reply is the REFERRER's name"
+  - Implemented fuzzy name matching with confidence scoring (exact match: 50pts, partial: lower)
+  - Added LLM confirmation step when multiple potential matches found
+- Database schema: Added `referred_by` (UUID) and `name_dropped` (VARCHAR) to users table
+- **Lesson:** LLMs need conversation context to disambiguate user intent, especially for name extraction
+
+**7. DNS Subdomain Configuration Requires Hostname Only** (2025-10-16)
+- Problem: MX records for `verify.yachtparty.xyz` weren't resolving (NXDOMAIN)
+- Root cause: DNS host field was set to `verify.yachtparty.xyz` instead of just `verify`
+- Impact: Emails bouncing, verification emails not reaching webhook
+- **Solution:** Changed host from `verify.yachtparty.xyz` to `verify` in Google Domains DNS
+- **Lesson:** When adding subdomain records in DNS, use only the subdomain portion (e.g., `verify`), not the FQDN. The parent domain is automatically appended.
+
+**8. Email Service Webhook Formats Vary Significantly** (2025-10-16)
+- Problem: Webhook returned 400 error "Missing recipient address" despite email arriving
+- Root cause: Maileroo sends `recipients` array, not `to` field
+- **Solution:** Added support for multiple email webhook formats in `/verify-email` endpoint:
+  - Standard: `req.body.to` / `req.body.from`
+  - Maileroo: `req.body.recipients[0]` / `req.body.envelope_sender`
+  - AWS SES: `req.body.envelope.to` / `req.body.envelope.from`
+  - Added email extraction from "Name <email@domain.com>" format
+- **Lesson:** Design webhook handlers to support multiple payload formats from different email providers
+
+#### Technical Issues Encountered
+
+**Issue 1: Dockerfile Corruption**
+- Problem: task-processor Dockerfile accidentally overwritten during debugging
+- Solution: Restored from backup, implemented proper version control
+- Prevention: Always commit Dockerfiles before testing modifications
+
+**Issue 2: npm Workspace Corruption** ✅ RESOLVED
+- Problem: `npm error Cannot read properties of undefined (reading 'extraneous')`
+- Impact: Blocked message-orchestrator initial deployment attempts
+- Resolution: Force reinstall of orchestrator dependencies (`rm -rf node_modules && npm install --force`)
+- Added express dependency that was missing from package.json
+- **Outcome:** Dependencies installed successfully, but revealed Issue 3
+
+**Issue 3: workspace:* Resolution in Docker** ✅ RESOLVED
+- Problem: @supabase/supabase-js not found despite being in workspace package.json
+- Root cause: Docker build doesn't have access to workspace root node_modules
+- **Solution implemented:** Modified deploy-service.sh to copy entire root node_modules:
+  ```bash
+  rsync -a --exclude='@yachtparty' node_modules/ "${DEPLOY_DIR}/node_modules/"
+  ```
+- This ensures all hoisted dependencies (and their sub-dependencies) are available in container
+- **Outcome:** All MODULE_NOT_FOUND errors resolved
+
+**Issue 4: event-processor workspace:* Dependency Syntax** ✅ RESOLVED
+- Problem: pnpm-style `workspace:*` dependency not understood by npm
+- Impact: @yachtparty/shared package not resolved during npm install
+- **Solution:** Changed package.json line 21 from `"workspace:*"` to `"file:../../shared"`
+- **Outcome:** event-processor compiled and deployed successfully
+
+**Issue 5: Missing HTTP Server in message-orchestrator** ✅ RESOLVED
+- Problem: Container started but didn't bind to port 8080, failed Cloud Run health checks
+- Root cause: MessageOrchestrator was a library class, not an HTTP service
+- **Solution:** Created packages/orchestrator/src/server.ts with:
+  - Express HTTP server binding to PORT environment variable
+  - Health check endpoint (GET /health)
+  - Message queueing API (POST /schedule-message)
+  - Background processor (setInterval calling processDueMessages every 30s)
+- Updated package.json start script to run server.js instead of index.js
+- **Outcome:** Service passed health checks and deployed successfully
+
+#### Successful Patterns
+
+1. **Multi-stage Dockerfiles** - Proper separation of build and runtime stages prevents dev dependency issues
+2. **Sub-agent Collaboration** - Parallel debugging of different services by Sub-Agents A, B, C accelerated resolution
+3. **Backup Strategy** - Having file backups enabled quick recovery from accidental overwrites
+4. **TypeScript Strict Mode** - Caught errors at compile time instead of runtime
+
+#### Recommended Next Steps
+
+1. ✅ **COMPLETED: Fix event-processor workspace dependencies** - Resolved by changing workspace:* to file: syntax
+2. ✅ **COMPLETED: Resolve npm corruption** - Resolved with force reinstall and full node_modules copy
+3. ✅ **COMPLETED: Add HTTP wrappers to library services** - message-orchestrator now has Express server
+4. ✅ **COMPLETED: Deploy remaining services** - All services deployed to Cloud Run
+5. ✅ **COMPLETED: Referral tracking** - Implemented conversation context-based name disambiguation (2025-10-16)
+6. ✅ **COMPLETED: Email verification setup** - Maileroo email routing fully configured and tested (2025-10-16)
+7. ✅ **COMPLETED: End-to-end onboarding flow** - SMS → Bouncer → email verification → Concierge tested (2025-10-16)
+8. **Next: Message orchestrator testing** - Test scheduled messages, rate limiting, quiet hours
+9. **Next: Task processor testing** - Verify scheduled tasks execute correctly
+10. **Future: Add pre-deployment validation** - Script to verify node_modules and run test builds before deploy
+11. **Future: Standardize service locations** - Consider moving message-orchestrator to packages/services/ for consistency
+
+#### Statistics
+
+- **Deployment attempts:** 9 total (task-processor: 1, event-processor: 2, message-orchestrator: 6)
+- **Success rate:** 100% (3 of 3 services successfully deployed)
+- **Time spent:** ~4 hours total
+- **Bug fixes:** 5 critical issues resolved (UUID format, TypeScript errors, Dockerfile, workspace deps, HTTP wrapper)
+- **Remaining blockers:** 0 - All core services deployed and healthy
+- **Code changes:** 4 files modified, 1 file created (server.ts)
+- **Deploy script improvements:** 2 enhancements (exclude .gitignore, copy full node_modules)
+
+---
+
+## 14. Remaining Work & Production Readiness
+
+### 14.1 Core Infrastructure (COMPLETE) ✅
+
+**All Services Successfully Deployed:**
+1. ✅ **twilio-webhook** - HTTP endpoint for receiving inbound SMS
+   - URL: https://twilio-webhook-ywaprnbliq-uc.a.run.app
+   - Status: Healthy (deployed Oct 16, 06:38 UTC)
+   - Last deployed by: ben@tinymammoth.xyz
+
+2. ✅ **sms-sender** - Sends outbound SMS via Twilio
+   - URL: https://sms-sender-ywaprnbliq-uc.a.run.app
+   - Status: Healthy (deployed Oct 16, 03:17 UTC)
+   - Messages processed: 0 (ready for traffic)
+
+3. ✅ **realtime-processor** - WebSocket processor for real-time events
+   - URL: https://realtime-processor-ywaprnbliq-uc.a.run.app
+   - Status: Running (deployed Oct 16, 02:07 UTC)
+   - Note: No /health endpoint (may be intentional for auth)
+
+4. ✅ **task-processor** - Processes scheduled agent tasks
+   - URL: https://task-processor-82471900833.us-central1.run.app
+   - Status: Healthy (deployed Oct 16, 16:13 UTC)
+   - Polling: Every 30 seconds, 10 tasks per batch
+
+5. ✅ **event-processor** - Handles system events
+   - URL: https://event-processor-82471900833.us-central1.run.app
+   - Status: Healthy (deployed Oct 16, 16:30 UTC)
+   - Handlers: 10 registered, 7 events processed
+
+6. ✅ **message-orchestrator** - Rate limiting and message queue
+   - URL: https://message-orchestrator-82471900833.us-central1.run.app
+   - Status: Healthy (deployed Oct 16, 17:01 UTC)
+   - Background processor: Running every 30 seconds
+
+**No further service deployments required for core functionality.**
+
+### 14.2 Email Verification Setup ✅ COMPLETE
+
+**Implementation: Maileroo Email Routing**
+- Status: ✅ Fully implemented and tested
+- Email service: Maileroo (not Cloudflare as originally planned)
+- Webhook endpoint: `POST /verify-email` on twilio-webhook service
+- Service URL: `https://twilio-webhook-82471900833.us-central1.run.app/verify-email`
+
+**DNS Configuration (Google Domains):**
+```
+Host: verify
+Type: MX
+Priority: 10
+Value: mx1.maileroo.com
+
+Host: verify
+Type: MX
+Priority: 20
+Value: mx2.maileroo.com
+```
+
+**Critical Learning:** When adding subdomain MX records in Google Domains, use just the subdomain name (e.g., `verify`) as the host field, NOT the full FQDN (e.g., `verify.yachtparty.xyz`). The parent domain is automatically appended.
+
+**Maileroo Inbound Route Configuration:**
+- Pattern: `verify-.*@verify\.yachtparty\.xyz` (regex enabled, match recipient)
+- Webhook URL: `https://twilio-webhook-82471900833.us-central1.run.app/verify-email`
+- Method: POST
+- Format: JSON
+
+**Webhook Payload Format (Maileroo):**
+```json
+{
+  "recipients": ["verify-USER-ID@verify.yachtparty.xyz"],
+  "envelope_sender": "user@company.com",
+  "headers": {
+    "From": ["Name <user@company.com>"],
+    "Subject": ["..."]
+  },
+  "message_id": "...",
+  "domain": "yachtparty.xyz"
+}
+```
+
+**Webhook Processing:**
+1. Extract recipient from `req.body.recipients[0]`
+2. Parse user_id from format: `verify-{user_id}@verify.yachtparty.xyz`
+3. Extract sender email from `req.body.envelope_sender` or `req.body.headers.From[0]`
+4. Handle "Name <email@domain.com>" format (extract email from angle brackets)
+5. Update user record:
+   - `verified = true`
+   - `email = extracted_email`
+   - `poc_agent_type = 'concierge'`
+6. Send confirmation SMS via Concierge agent
+7. Log event to `agent_actions_log`
+
+**Testing:** Verified end-to-end on 2025-10-16
+
+### 14.3 End-to-End Testing
+
+**SMS Flow Testing (Critical Path):**
+1. ✅ Inbound SMS → webhook → user creation *(tested 2025-10-16)*
+2. ✅ Bouncer agent onboarding flow *(tested 2025-10-16)*
+3. ✅ Email verification link generation and handling *(tested 2025-10-16)*
+4. ✅ Concierge agent handoff *(tested 2025-10-16)*
+5. ⏳ Message orchestrator → SMS sending
+6. ⏳ Task processor executing scheduled tasks
+7. ⏳ Event processor handling system events
+
+**Testing priorities:**
+- Priority 1: Complete one full user onboarding flow end-to-end
+- Priority 2: Verify message orchestrator rate limiting works correctly
+- Priority 3: Test task processor with scheduled agent tasks
+- Priority 4: Validate event processor handles all 10 registered event types
+
+### 14.4 Agent Implementation Status
+
+**Fully Implemented:**
+- ✅ Bouncer Agent - User onboarding (packages/agents/bouncer/)
+- ✅ Concierge Agent - Verified user interface (packages/agents/concierge/)
+- ✅ Account Manager Agent - Priority intelligence (packages/agents/account-manager/)
+
+**Partially Implemented / Placeholders:**
+- ⏳ Solution Saga - Event-driven solution research orchestration
+  - Status: Database tables exist, agent handler is placeholder
+  - Remaining: Implement Perplexity API integration, LLM decision points
+
+- ⏳ Intro Agent - Introduction facilitation
+  - Status: Database tables exist (intro_opportunities), minimal logic
+  - Remaining: Full workflow implementation
+
+- ⏳ Social Butterfly / Demand Agent - Prospect research
+  - Status: Not yet implemented
+  - Remaining: Apify LinkedIn integration, mutual connection discovery
+
+**Not Yet Implemented (Phase 2+):**
+- Agent of Humans - Community request routing
+- Innovator Agent - Specialized Concierge variant for solution providers
+
+### 14.5 Production Checklist
+
+**Infrastructure:**
+- [x] Core database schema deployed (5 migrations)
+- [x] All agent packages built and tested
+- [x] task-processor deployed to Cloud Run
+- [x] event-processor deployed to Cloud Run
+- [x] message-orchestrator deployed to Cloud Run
+- [x] twilio-webhook deployed to Cloud Run
+- [x] sms-sender deployed to Cloud Run
+- [x] realtime-processor deployed to Cloud Run
+- [x] All secrets configured in Google Secret Manager
+- [ ] Twilio webhook URL verified and configured to point to Cloud Run endpoint
+- [ ] Health monitoring configured (uptime checks, alerts)
+
+**Email Verification:**
+- [x] Maileroo Email Routing configured (MX records on verify.yachtparty.xyz)
+- [x] Maileroo inbound route configured (webhook to Cloud Run)
+- [x] Verification webhook endpoint deployed (POST /verify-email)
+- [x] End-to-end verification flow tested (2025-10-16)
+
+**Testing:**
+- [x] One complete user onboarding flow tested (SMS → email → verified) - 2025-10-16
+- [ ] Message sending tested via message orchestrator
+- [ ] Rate limiting validated
+- [ ] Scheduled tasks execution verified
+- [ ] Event processor handling all event types verified
+- [ ] Agent task scheduling validated
+- [ ] Event processing validated for all 10 handler types
+
+**Monitoring & Observability:**
+- [ ] Cost dashboard configured (LLM usage by agent)
+- [ ] Error aggregation configured (Sentry or similar)
+- [ ] Log aggregation configured (Cloud Logging or similar)
+- [ ] Alert thresholds defined and configured
+
+**Documentation:**
+- [x] requirements.md updated with deployment learnings
+- [x] PROGRESS.md updated with current status
+- [x] SUB_AGENT_ASSIGNMENTS.md tracking sub-agent work
+- [x] DEPLOYMENT_STATUS.md updated with all service URLs
+- [ ] Runbook created for common issues
+
+### 14.6 Estimated Timeline to Production
+
+**With All Services Deployed (Updated Oct 16, 2025):**
+
+**Optimistic (everything works first try):** 2-3 hours
+- Email verification setup: 1 hour
+- Twilio webhook configuration and testing: 30 minutes
+- End-to-end testing: 1-1.5 hours
+
+**Realistic (normal debugging required):** 4-6 hours
+- Email verification + debugging: 2 hours
+- Twilio configuration and webhook testing: 1 hour
+- End-to-end testing + issue resolution: 2-3 hours
+
+**Conservative (major issues discovered):** 8-12 hours
+- Includes time for unexpected integration issues
+- Includes time for Twilio A2P 10DLC registration delays (if not already complete)
+- Includes comprehensive testing across all workflows
+- Includes monitoring and alerting setup
+
+**Note:** Timeline reduced from original estimates because all 6 core services are already deployed and healthy. Remaining work is primarily configuration and testing.
+
+### 14.7 Known Risks & Mitigation
+
+**Risk 1: Twilio A2P 10DLC Registration**
+- Impact: Cannot send production SMS without approval
+- Mitigation: Test with Twilio test credentials until registration complete
+- Timeline: 1-2 weeks for approval
+
+**Risk 2: Rate Limiting Configuration**
+- Impact: Users may receive too many/too few messages initially
+- Mitigation: Start with conservative limits (5 msgs/day), monitor and adjust
+- Timeline: 1-2 weeks of production data needed for optimization
+
+**Risk 3: LLM Cost Overruns**
+- Impact: Costs could exceed budget if prompt caching misconfigured
+- Mitigation: Implement daily cost alerts, validate caching working in logs
+- Timeline: Monitor first week of production closely
+
+**Risk 4: Database Performance**
+- Impact: Slow queries could delay message processing
+- Mitigation: Indexes already created for common queries, monitor pg_stat_statements
+- Timeline: Add indexes as needed based on actual query patterns
+
+---
+
+## 15. Implementation Learnings & Design Decisions
+
+### 15.1 Prospect Matching & Fuzzy Matching System
+
+**Implemented:** October 18, 2025
+
+**Challenge:** Multiple innovators may upload the same prospect with slight variations in contact info (e.g., "jason.jones@company.com" vs "jjones@company.com"). When that prospect joins the platform, we need to match them to ALL uploaders while avoiding false positives.
+
+**Solution - Modular Score-Based Fuzzy Matching:**
+
+**Normalization Functions:**
+- **Email**: Remove dots/hyphens from user part, remove hyphens from domain
+  - `jason.jones@the-trade-desk.com` → `jasonjones@thetradedesk.com`
+- **Name**: Remove middle initials, separators, convert to lowercase
+  - `"Jason M. Jones"` → `"jasonjones"`
+- **Company**: Remove "The", "Inc", "LLC", separators
+  - `"The Trade Desk, Inc."` → `"tradedesk"`
+
+**Scoring System:**
+- Exact email match: 100 points (high confidence)
+- Exact phone match: 100 points (high confidence)
+- Exact LinkedIn match: 100 points (high confidence)
+- Fuzzy email match (normalized): 80 points (medium-high confidence)
+- Name + email domain match: 70 points (medium-high confidence)
+- Name + company match: 60 points (medium confidence)
+
+**Confidence Thresholds:**
+- 100+: Auto-upgrade (exact match on at least one contact method)
+- 70-99: Auto-upgrade (high confidence fuzzy match)
+- 40-69: Future manual review queue
+- <40: No match
+
+**Key Design Decisions:**
+1. **Modular by Design**: Matching logic in separate file (`prospect-matching.ts`) with exported functions for easy iteration
+2. **Start Conservative**: 70+ score threshold prevents false positives, can be tuned based on production data
+3. **Multi-Innovator Support**: If 3 innovators uploaded same prospect, ALL 3 get intro opportunities when prospect joins
+4. **Log Everything**: Match scores, reasoning, and matched fields logged for analysis and tuning
+5. **Future ML Upgrade Path**: Current rule-based system can be replaced with ML model using same interface
+
+**Credit Flow:**
+- Prospect conversion (joins platform): 25 credits to each innovator who uploaded them
+- Intro completion (innovator makes intro): 50 credits
+
+**Non-Blocking Integration:**
+- Prospect upgrade errors don't fail user onboarding
+- Errors logged but user proceeds as verified
+- Bouncer marks `prospect_upgrade_checked` in user metadata to prevent duplicates
+
+**Files:**
+- `packages/shared/src/utils/prospect-matching.ts` - Core matching logic
+- `packages/shared/src/utils/prospect-upload.ts` - CSV parsing and validation
+- `packages/shared/src/utils/prospect-upgrade.ts` - Upgrade flow orchestration
+- `packages/agents/bouncer/src/onboarding-steps.ts:380-413` - Integration point
+- `docs/prospect-matching-strategy.md` - Detailed documentation
+
+### 15.2 Table Naming Conventions
+
+**Decision:** Use descriptive names that reflect actual usage, not generic terms.
+
+**Example - Prospects Tables:**
+- `prospects` - Innovator-uploaded prospects (primary use case)
+- `linkedin_research_prospects` - Research-generated prospects (secondary use case)
+
+**Rationale:** Generic name (`prospects`) goes to most common use case. Descriptive name makes it obvious what the alternative table is for. Avoids confusion when querying database.
+
+**Pattern to Follow:** When splitting tables, give the primary table the simple name, give secondary tables descriptive prefixes/suffixes.
+
+### 15.3 CSV Upload Best Practices
+
+**Header Flexibility:**
+- Accept common variations: `phone` or `phone_number`, `linkedin` or `linkedin_url`
+- Map to canonical field names internally
+- Document supported header variations in upload UI
+
+**Validation Strategy:**
+- Require at least one contact method (email OR phone OR LinkedIn)
+- Validate format for each provided field
+- Warn (don't error) on missing recommended fields (name, company)
+- Return detailed validation results per row
+
+**Batch Tracking:**
+- Generate `upload_batch_id` (UUID) for each upload
+- Tag all prospects in batch with same ID
+- Enable batch operations (revert, analyze, export)
+
+**User Experience:**
+- Show validation results before confirming upload
+- Display: "N valid, M warnings, P errors"
+- Allow user to fix errors or proceed with valid rows only
+
+### 15.4 SMS Delivery Latency & Cloud Run Cold Starts
+
+**Implemented:** October 20, 2025
+
+**Challenge:** Outbound SMS messages experiencing 50-60 second delays before delivery, initially suspected to be Twilio API latency.
+
+**Investigation Process:**
+
+1. **Initial Hypothesis:** Twilio API slow (50s latency in logs)
+2. **Checked Database:** Two triggers found on messages table:
+   - `on_message_send` → `notify_send_sms()` (pg_notify, nobody listening)
+   - `send_sms_on_message_insert` → `send_sms_webhook()` (pg_net HTTP POST)
+3. **Removed Dead Code:** Dropped unused trigger/function
+4. **Root Cause Discovery:** sms-sender service had `min-instances: 0`
+
+**Root Cause:**
+The 50-60 second delay was **Cloud Run cold start time**, not Twilio latency. When sms-sender scaled to zero:
+1. Message created → pg_net queues HTTP POST
+2. pg_net makes request → Cloud Run cold starts container (30-60 seconds)
+3. Container ready → webhook processed
+4. Twilio call made and completes quickly (~500ms-1s)
+
+**Solution:** Set `min-instances: 1` for sms-sender service
+
+```bash
+gcloud run services update sms-sender --min-instances=1 --region=us-central1
+```
+
+**Results:**
+- **Before:** ~50-60 seconds (cold start + processing)
+- **After:** ~1-2 seconds (warm container + processing)
+
+**Key Learnings:**
+
+1. **Always-On Services Matter:** Services on critical path (message delivery) must stay warm
+2. **Cold Start Impact:** 30-60 seconds is typical for Node.js containers on Cloud Run
+3. **pg_net Works Well:** HTTP POST via pg_net.http_post() is reliable for async webhooks
+4. **Cost vs Speed Tradeoff:** min-instances=1 adds ~$15/month but eliminates user-facing delays
+5. **Remove Dead Code:** Unused triggers can confuse debugging and add unnecessary processing
+
+**Services Requiring min-instances=1:**
+- `twilio-webhook` - Critical path for inbound messages (<3s SLA)
+- `sms-sender` - Critical path for outbound messages (user-facing delay)
+- `task-processor` - Scheduled tasks (not user-facing, can tolerate cold starts)
+- `event-processor` - Background events (not user-facing, can tolerate cold starts)
+
+**Database Trigger Pattern:**
+
+Working trigger uses pg_net for HTTP webhooks:
+```sql
+CREATE FUNCTION send_sms_webhook() RETURNS TRIGGER AS $$
+DECLARE
+  request_id bigint;
+  payload jsonb;
+BEGIN
+  payload := jsonb_build_object(
+    'type', TG_OP,
+    'table', TG_TABLE_NAME,
+    'record', row_to_json(NEW)
+  );
+
+  SELECT net.http_post(
+    url := 'https://sms-sender-ywaprnbliq-uc.a.run.app/send-sms',
+    headers := '{"Content-Type": "application/json"}'::jsonb,
+    body := payload
+  ) INTO request_id;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER send_sms_on_message_insert
+  AFTER INSERT ON messages
+  FOR EACH ROW
+  WHEN (NEW.status = 'pending' AND NEW.direction = 'outbound')
+  EXECUTE FUNCTION send_sms_webhook();
+```
+
+**Avoid:** pg_notify approach requires long-running listener process, adds complexity.
+
+### 15.5 Concierge Intelligent Decision-Making Enhancements
+
+**Implemented:** October 20, 2025
+
+**Challenge:** Real-world user communication is messy. Users send vague requests, make typos, correct themselves mid-conversation, and sometimes get frustrated when we ask clarifying questions. The Concierge agent needed to handle these scenarios intelligently without guessing user intent or creating poor experiences.
+
+**Solution - Three-Part Enhancement:**
+
+#### 15.5.1 Ambiguity Detection & Clarification Requests
+
+**Problem:** When user intent is ambiguous (e.g., "Looking for partners" could mean consultants, vendors, strategic partners, etc.), the agent was guessing which tool to use instead of requesting clarification. This led to wrong actions and poor user experience.
+
+**Implementation:**
+
+1. **Added `request_clarification` scenario to Call 1 decision logic** (decision.ts:57)
+   - New scenario type that explicitly signals "need clarification"
+   - Agent checks: "Is their intent clear, or could it mean multiple things?"
+   - If ambiguous: DO NOT execute tools, return clarification request
+
+2. **Structured clarification context** (decision.ts:54-61)
+   ```typescript
+   clarification_needed?: {
+     ambiguous_request: string;
+     possible_interpretations: Array<{
+       label: string;
+       description: string;
+       would_trigger_tool?: string;
+     }>;
+   };
+   ```
+
+3. **Natural clarification presentation in Call 2** (personality.ts:99-103)
+   - Present options conversationally: "Are we talking about [option 1], or [option 2]? Or something else altogether?"
+   - Frame as wanting to help correctly, not confusion
+   - Brief and friendly (1-2 sentences max)
+   - NEVER expose internal tools or system logic
+
+**Example Interaction:**
+
+User: "I'm trying to scale our CTV advertising from $100k to $1M in Q1. Want to find the right partners for that."
+
+Agent (Call 1): Detects "partners" is ambiguous → returns `request_clarification` scenario with interpretations:
+- CTV advertising vendors/platforms
+- Strategic business partners
+- Consultants/experts
+
+Agent (Call 2): "Are we talking about CTV advertising vendors and tech platforms to help you scale that spend, or strategic partners who might be interested in a solution you're offering? Or something else altogether?"
+
+User clarifies → Agent proceeds with correct tool
+
+**Key Design Decisions:**
+
+1. **No tools when ambiguous** - Call 1 must return empty tools array if requesting clarification
+2. **Structured interpretations** - Helps Call 2 present options clearly without guessing
+3. **"Or something else" option** - Always acknowledge we might have missed the intent entirely
+4. **Brief presentation** - Match Concierge personality (helpful, not verbose)
+
+**Testing:** Test suite includes ambiguous "partners" request that correctly triggers clarification instead of guessing (concierge.scenarios.test.ts:221-281)
+
+#### 15.5.2 Multi-Message Intelligence
+
+**Problem:** Users frequently send multiple messages in rapid succession:
+- Typo corrections: "Bran" → "Brian"
+- Adding context to previous message: "Need help with CTV" → "Specifically ad platforms" → "Looking at Roku, Samsung, Fire TV"
+- Topic changes mid-conversation: "CTV vendors?" → "Actually, do you know anyone at Hulu?"
+- Self-corrections: "The first" → "Actually the second one"
+
+The agent needed to correctly interpret these patterns instead of treating each message in isolation.
+
+**Implementation:**
+
+Added explicit guidance to Call 1 decision process (decision.ts:213-227):
+
+```typescript
+## Decision Process
+
+Analyze the user's message:
+1. What are they asking for or saying?
+2. **MULTI-MESSAGE PATTERNS**: Did the user send multiple messages quickly?
+   - Check timestamps: If <60 seconds apart, likely related
+   - Pattern detection:
+     - Typo correction: "Bran" then "Brian" → use "Brian"
+     - Adding context: Combine messages into full request
+     - Topic change: New topic supersedes old one
+     - Self-correction: Latest message is authoritative
+3. **AMBIGUITY CHECK**: Is their intent clear, or could it mean multiple things?
+4. If ambiguous: Request clarification (DO NOT guess)
+5. If clear: Which tool(s) should be used?
+```
+
+**Conversation History Analysis:**
+
+- Last 5-10 messages loaded for context
+- Timestamps compared to detect rapid sequences
+- LLM uses full conversation context to resolve intent
+- Example: User said "platforms" after we asked "ad platforms or consultants?" → LLM infers "ad platforms" from context
+
+**Test Coverage:**
+
+Created comprehensive multi-message test suite (concierge.multi-message.test.ts) with 5 scenarios:
+1. **Typo correction** - "Bran" followed by "Brian" correctly interpreted as name correction
+2. **Unclear response to options** - "platforms" after asking about options correctly inferred from context
+3. **Topic change detection** - "Actually, do you know anyone at Hulu?" recognized as new intro request
+4. **Rapid sequential messages** - Multiple messages <60s apart combined into coherent request
+5. **Correction after clarification** - "The first" → "Actually the second one" uses corrected answer
+
+**Key Design Decisions:**
+
+1. **Context is king** - Always analyze recent message history, not just latest message
+2. **Timestamp awareness** - Messages <60s apart likely related
+3. **Latest is authoritative** - If user corrects themselves, use the correction
+4. **Flexible interpretation** - LLM makes judgment call based on full context, not rigid rules
+
+#### 15.5.3 Post-Clarification Handling & Frustration Detection
+
+**Problem:** After requesting clarification, the agent needed to exercise EXTRA judgment because:
+- User might be frustrated by the clarification request
+- Messages might arrive out of order (SMS delivery quirks)
+- Agent needs to verify ambiguity is now resolved
+- If frustration detected, should acknowledge confusion gracefully
+
+**Implementation:**
+
+1. **Recent clarification tracking** (decision.ts:213-227)
+   - Call 1 checks: "Did we request clarification in past 5-10 messages?"
+   - If yes, exercise EXTRA caution:
+     - Check message timestamps for potential out-of-order delivery
+     - Review message sequence carefully
+     - Verify ambiguity is now resolved
+     - Look for frustration signals (terse responses, "never mind", delays)
+
+2. **Post-clarification context** (decision.ts:60-64)
+   ```typescript
+   post_clarification_context?: {
+     had_recent_clarification: boolean;
+     frustration_detected: boolean;
+     should_acknowledge_confusion: boolean;
+   };
+   ```
+
+3. **Confusion acknowledgment templates** (personality.ts:273-288)
+   ```typescript
+   **For leaked internal messages/JSON:**
+   "Whoa. That was all me. Sorry. Let me try that again."
+
+   **For duplicate messages:**
+   "I just noticed I sent you that twice. My bad."
+
+   **For strange ordering or confusion:**
+   "Sorry, that was strange."
+   OR
+   "Apologies for the confusion, some texts have been getting delivered slowly."
+   ```
+
+4. **Smart acknowledgment strategy** (personality.ts:213-227)
+   - If frustration detected after clarification: MUST acknowledge before proceeding
+   - Choose best explanation:
+     - Specific mistake if identifiable: "Sorry, that was on me."
+     - Message delivery if ordering issues: "Some texts have been getting delivered slowly."
+     - Generic if no clear cause: "Sorry, that was strange."
+   - Never overly apologetic - one brief acknowledgment, then move on professionally
+
+**Frustration Signals:**
+
+- Terse responses after clarification request
+- "Never mind" or "forget it"
+- Long delay after clarification (user hesitated)
+- Short/dismissive answers to clarification question
+- Tone change (engaged → curt)
+
+**Example Interaction:**
+
+[We requested clarification about "partners"]
+User (after delay): "whatever just forget it"
+
+Agent (Call 1):
+- Detects recent clarification request (3 messages ago)
+- Detects frustration signal ("forget it")
+- Returns: `post_clarification_context: {had_recent_clarification: true, frustration_detected: true, should_acknowledge_confusion: true}`
+
+Agent (Call 2):
+- Acknowledges: "Sorry, that was strange."
+- Moves on professionally without being overly apologetic
+
+**Key Design Decisions:**
+
+1. **Proactive error detection** - Check for recent clarification automatically in Call 1
+2. **Message order awareness** - SMS can arrive out of order, check timestamps
+3. **Self-deprecating humor** - "My bad" feels more human than "I apologize profusely"
+4. **Blame text delivery when appropriate** - Valid explanation for ordering issues
+5. **Never overly apologetic** - Brief acknowledgment maintains professionalism
+6. **Context-dependent acknowledgment** - Only acknowledge if frustration detected
+7. **Message sequences for recovery** - Use "---" delimiter to separate acknowledgment from continuation
+
+**Testing:**
+
+Tests validate that agent:
+- Detects ambiguity and requests clarification instead of guessing
+- Handles typo corrections and rapid messages intelligently
+- Uses conversation context to resolve unclear responses
+- Recognizes topic changes vs. answering questions
+- (Post-clarification handling tested in production, not yet in test suite)
+
+**Benefits:**
+
+1. **Better UX** - No more guessing when intent is unclear
+2. **Fewer errors** - Agent asks when uncertain instead of executing wrong action
+3. **Natural recovery** - Gracefully handles multi-message patterns
+4. **Trust building** - Acknowledges mistakes without being obsequious
+5. **Context awareness** - Uses full conversation history, not just latest message
+
+**Files:**
+
+- `packages/agents/concierge/src/decision.ts:213-227` - Ambiguity detection and multi-message intelligence
+- `packages/agents/concierge/src/decision.ts:54-64` - Clarification and post-clarification context structures
+- `packages/agents/concierge/src/personality.ts:99-103` - Clarification scenario guidance
+- `packages/agents/concierge/src/personality.ts:209-236` - Post-clarification handling
+- `packages/agents/concierge/src/personality.ts:273-288` - Self-reflection and error acknowledgment
+- `packages/agents/concierge/__tests__/concierge.scenarios.test.ts:221-281` - Ambiguity detection test
+- `packages/agents/concierge/__tests__/concierge.multi-message.test.ts` - Multi-message intelligence test suite (5 scenarios)
+
+**Application to Other Agents:**
+
+This pattern should be applied to:
+- **Bouncer** - Handle vague responses during onboarding, clarify ambiguous inputs
+- **Innovator** - Detect ambiguous prospect details, clarify qualification questions
+
+The structured approach (Call 1 detects ambiguity → Call 2 presents options naturally) maintains separation of concerns while improving decision quality across all agents.
+
+---
+
+## 16. Concierge & Innovator 2-LLM Architecture Implementation Plan
+
+**Status:** Planning Phase - Not Yet Implemented
+**Created:** October 20, 2025
+**Purpose:** Master reference for applying Bouncer's proven 2-LLM architecture to Concierge and Innovator agents
+
+### 16.1 Overview & Context
+
+Following the successful implementation of the 2-LLM sequential architecture for the Bouncer agent (which solved personality suppression and enabled self-reflection), we now plan to apply the same pattern to Concierge and Innovator agents.
+
+**Key Challenge:** These agents are significantly more complex than Bouncer:
+1. **More tools** - Concierge: 5 tools, Innovator: 9 tools (vs Bouncer's 3)
+2. **Multi-threading** - Re-engagement may address multiple open items (community requests, priorities, user inquiries)
+3. **Richer context** - More message history, user priorities from Account Manager, outstanding requests
+4. **Complex re-engagement decisions** - LLM must assess multiple threads and decide message strategy
+
+**Core Principle (Unchanged from Bouncer):**
+- **Call 1:** Decision-making ONLY (tool selection, business logic, context analysis) - NO personality
+- **Call 2:** Personality & message composition ONLY (natural language generation) - NO tools, NO business logic
+- Strict separation prevents personality suppression and conflicting instructions
+
+### 16.2 Call 1 - Decision & Tool Execution
+
+#### 16.2.1 Configuration by Invocation Type
+
+| Invocation Type | Message History | Temperature | Max Tokens | Focus |
+|-----------------|----------------|-------------|-----------|-------|
+| **User Message** | Last 5-10 messages | 0.1 | 800 | Tool selection, data extraction |
+| **Re-engagement** | Last 15-20 messages | 0.6 | 1000 | Multi-thread analysis, social judgment, priority assessment |
+| **System Trigger** (priority notification, solution update) | Last 10 messages | 0.3 | 800 | Structured data rendering prep |
+
+**Rationale for Configuration Differences:**
+- **User messages:** Time-sensitive (<3s requirement) → minimize context, low temp for speed and consistency
+- **Re-engagement:** NOT time-sensitive → maximize context for social awareness, higher temp (0.6) for nuanced judgment
+- **System triggers:** Background work → moderate context and temp
+
+#### 16.2.2 Call 1 Output Structure
+
+```typescript
+interface Call1Output {
+  // Tools to execute
+  tools_to_execute: Array<{
+    tool_name: string;
+    params: Record<string, any>;
+  }>;
+
+  // For re-engagement specifically
+  threads_to_address?: Array<{
+    type: 'community_request_response_needed' | 'priority_opportunity' | 'user_inquiry_update';
+    item_id: string;
+    priority: 'high' | 'medium' | 'low';
+    message_guidance: string;  // What to say about this thread
+  }>;
+
+  // Message composition strategy for Call 2
+  next_scenario: 'multi_thread_response' | 'single_topic_response' | 'no_message' | 'priority_opportunity' | 'solution_update' | 'community_request_followup';
+
+  context_for_call_2: {
+    primary_topic: string;  // What to lead with
+    secondary_topics?: string[];  // What to mention after
+    tone: 'reassuring' | 'informative' | 'opportunistic';
+    message_structure: 'single' | 'sequence_2' | 'sequence_3';
+
+    // Specific guidance for personality
+    personalization_hooks: {
+      user_name: string;
+      recent_context: string;
+      emotional_state: 'eager' | 'patient' | 'frustrated' | 'overwhelmed';
+    };
+  };
+
+  // Results from tool execution to pass to Call 2
+  tool_results: Record<string, any>;
+}
+```
+
+#### 16.2.3 Re-Engagement Decision Logic (Call 1)
+
+When handling `re_engagement_check` task:
+
+**Step 1: Load Full Context**
+```typescript
+{
+  user_priorities: top10PrioritiesFromAccountManager,
+  outstanding_community_requests: userOwnOpenRequests,
+  pending_community_responses: requestsPresentedToUserAwaitingResponse,
+  user_goal: userProfile.response_pattern?.user_goal,
+  recent_messages: last15to20Messages,
+  days_since_last_message: calculatedDays
+}
+```
+
+**Step 2: Analyze Each Thread**
+```
+For each priority/request/opportunity:
+  - Is it still relevant?
+  - Has enough time passed to warrant follow-up?
+  - What value does it offer the user RIGHT NOW?
+  - Should we mention it, or wait for better timing?
+```
+
+**Step 3: Social Judgment (temp 0.6 for nuance)**
+```
+Review conversation tone/cadence:
+  - Is user engaged or overwhelmed?
+  - Did they express frustration?
+  - Have we already sent unanswered follow-ups?
+  - Would reaching out feel helpful or pushy?
+
+Read for signals like:
+  - Short, terse responses → user may be busy/frustrated
+  - Thoughtful, detailed responses → user is engaged
+  - Delays in response times → user may need space
+  - Explicit statements ("too many messages", "give me some time")
+```
+
+**Step 4: Decide Message Strategy**
+```
+IF should_message:
+  - Order threads by priority (high → medium → low)
+  - Determine message structure:
+    * Single message: One primary topic, brief
+    * Sequence of 2: Primary + secondary topic
+    * Sequence of 3: Reassurance + update + opportunity
+
+  - Create guidance for Call 2:
+    * What to lead with
+    * What tone to use
+    * How to structure the message(s)
+
+ELSE (no_message):
+  - Extend re-engagement task by X days (30-90)
+  - Log reason (user busy, no high-value priorities, etc.)
+  - Return silent (no message sent)
+```
+
+#### 16.2.4 Example Call 1 Re-Engagement Prompt
+
+```typescript
+## CONTEXT
+
+User: Jason Smith
+Days since last message: 7
+User goal: "Find CTV advertising vendors for Q1 launch"
+
+Outstanding items (ranked by value_score):
+1. [priority - score 85] intro_opportunity: Connect with Sarah Chen (CTV expert at Hulu)
+2. [priority - score 72] solution_research: "CTV advertising platforms" - status: in_progress
+3. [community_request] User asked: "Looking for CTV vendor recs" (7 days ago, status: open, 0 responses yet)
+
+Recent conversation (last 15 messages):
+[2025-10-13 10:23] User: Looking for CTV advertising vendors for our Q1 launch. Any suggestions?
+[2025-10-13 10:24] Concierge: Got it. I'll get that question out to the network and see what I can find.
+[... 13 more messages showing user engaged, asked follow-up questions, then conversation dropped off ...]
+
+## YOUR TASK
+
+Decide: Should we message the user now, or extend follow-up?
+
+Analyze (Temperature 0.6 for nuanced social judgment):
+
+1. **Tone & Engagement:**
+   - Review the conversation. Is user responsive/interested? Or overwhelmed/frustrated?
+   - Look at response length and thoughtfulness
+   - Any signs of being too busy or needing space?
+
+2. **Value Proposition:**
+   - Do we have something concrete to offer (intro ready, research complete)?
+   - Are these opportunities actually valuable to their stated goal?
+   - Would they appreciate hearing from us, or feel interrupted?
+
+3. **Timing:**
+   - 7 days since last message - appropriate window?
+   - Are they waiting on us, or are we pushing?
+   - Any holidays/weekends/quiet hours to consider?
+
+4. **Social Appropriateness:**
+   - Have we sent multiple unanswered follow-ups already?
+   - Did they indicate they'd get back to us?
+   - Would this feel helpful or annoying?
+
+CRITICAL: Read conversation tone carefully. This is NOT a mechanical checklist.
+
+IF should message:
+  - Which threads should we address? (List in priority order)
+  - What tone? (Reassuring if they're waiting, informative if we have updates, opportunistic if new value)
+  - Message structure? (Single topic, or multi-step sequence?)
+  - Create specific guidance for Call 2 personality composition
+
+IF should NOT message:
+  - Why not?
+  - How many days should we extend the follow-up? (30-90 days)
+
+Output JSON with:
+{
+  "should_message": boolean,
+  "reasoning": "detailed explanation of your decision",
+  "threads_to_address": [...],  // if should_message = true
+  "next_scenario": "multi_thread_response" | "no_message",
+  "context_for_call_2": {...},  // if should_message = true
+  "extend_days": number  // if should_message = false
+}
+```
+
+### 16.3 Call 2 - Personality & Message Composition
+
+#### 16.3.1 Configuration
+
+| Parameter | Value | Reason |
+|-----------|-------|--------|
+| Temperature | 0.7 | Creative but controlled personality |
+| Max Tokens | 500 | Force brevity (2-3 sentences per message) |
+| Message History | Same as Call 1 | Continuity for self-reflection |
+
+#### 16.3.2 File Structure
+
+**New Files to Create:**
+
+**Concierge:**
+```
+packages/agents/concierge/src/
+  ├── personality.ts          # NEW - All personality, tone, scenarios
+  ├── decision.ts             # NEW - Call 1 decision logic
+  ├── index.ts                # REFACTOR - 2-LLM orchestration
+  ├── prompts.ts              # KEEP - System prompts for Call 1
+  ├── community-response.ts   # KEEP - Unchanged
+  ├── intent-classifier.ts    # DEPRECATE - No longer needed
+  └── message-renderer.ts     # DEPRECATE - Call 2 handles this
+```
+
+**Innovator:**
+```
+packages/agents/innovator/src/
+  ├── personality.ts          # NEW - Innovator personality (extends Concierge tone)
+  ├── decision.ts             # NEW - Call 1 with 9 tools
+  ├── index.ts                # REFACTOR - 2-LLM orchestration
+  └── prompts.ts              # REFACTOR - Add Call 1 prompts
+```
+
+#### 16.3.3 Personality Structure (personality.ts)
+
+Pattern modeled after Bouncer's `personality.ts`:
+
+```typescript
+export const CONCIERGE_PERSONALITY = `
+You are a Concierge at Yachtparty.
+
+YOUR ROLE:
+Help verified users find value through professional connections, business solutions, and expert insights.
+
+PERSONALITY & TONE:
+- Helpful and capable (not cheerleader)
+- Brief and professional (2-3 sentences max per message)
+- NO exclamation points (use periods)
+- NO superlatives or excessive enthusiasm
+- NO being overly agreeable
+- Match user's communication style
+- Show you remember context without over-explaining
+
+PRODUCT KNOWLEDGE:
+[Include same product info as in system prompt]
+
+## Self-Reflection and Error Acknowledgment
+[Same guidance as Bouncer - detect leaked JSON, duplicates, strange ordering]
+
+## Message Sequences
+[Same "---" delimiter pattern as Bouncer]
+`;
+
+export const SCENARIO_GUIDANCE = {
+  multi_thread_response: {
+    situation: 'Addressing multiple open items in re-engagement',
+    guidance: 'Start with reassurance (we haven\'t forgotten), then provide updates, then offer opportunities. Use message sequence if needed.',
+    structure: 'Message 1: Reassure about X. Message 2: Update on Y. Message 3: Offer Z if interested.',
+    example: `Haven't forgotten about your CTV vendor question. Still working on that.
+---
+Meanwhile, I can connect you with Sarah Chen at Hulu if you want to pick her brain about their CTV strategy.
+---
+Let me know if that would be helpful.`
+  },
+
+  single_topic_response: {
+    situation: 'One primary topic to address',
+    guidance: 'Be brief, provide value, make it easy to respond',
+    example: 'Found 3 CTV platforms that might fit your Q1 launch. Want me to send details?'
+  },
+
+  priority_opportunity: {
+    situation: 'Presenting high-value opportunity from Account Manager',
+    guidance: 'Explain WHY it\'s relevant, make it easy to say yes/no',
+    example: 'I can introduce you to Mike at Roku. He scaled their CTV ad platform from 0 to $500M. Worth a conversation?'
+  },
+
+  community_request_followup: {
+    situation: 'Following up on user\'s own community request with no responses yet',
+    guidance: 'Acknowledge delay, set realistic expectations, offer alternative if possible',
+    example: 'Still hunting for CTV experts to weigh in on your question. May take a few more days. Want me to try a different angle in the meantime?'
+  },
+
+  solution_update: {
+    situation: 'Research findings ready from Solution Saga',
+    guidance: 'Summarize findings, highlight most relevant options, ask clarifying questions',
+    example: 'Found 3 options for CTV platforms: Roku (enterprise), Vizio (mid-market), Samsung (developer-friendly). Which direction interests you most?'
+  },
+
+  // Innovator-specific scenarios
+  intro_progress_report: {
+    situation: 'Innovator asking about pending intros',
+    guidance: 'Focus on metrics and ROI, professional business tone',
+    example: '5 intros pending, 3 accepted. 60% conversion rate so far. The Acme intro is moving fastest.'
+  }
+};
+
+export function buildPersonalityPrompt(
+  scenario: string,
+  contextForResponse: string,
+  toolResults?: Record<string, any>
+): string {
+  const scenarioInfo = SCENARIO_GUIDANCE[scenario as keyof typeof SCENARIO_GUIDANCE];
+
+  let guidance = `## Current Situation\n${scenarioInfo?.situation || contextForResponse}\n\n`;
+  guidance += `## What You Need to Say\n${scenarioInfo?.guidance || contextForResponse}`;
+
+  if (scenarioInfo?.example) {
+    guidance += `\n\n## Example Response\n${scenarioInfo.example}`;
+  }
+
+  if (toolResults && Object.keys(toolResults).length > 0) {
+    guidance += `\n\n## Tool Results to Reference\n${JSON.stringify(toolResults, null, 2)}`;
+  }
+
+  return `${CONCIERGE_PERSONALITY}\n\n${guidance}\n\n## Important Reminders\n- Keep response SHORT (1-3 sentences max per message)\n- Use your personality\n- Don't repeat from conversation history\n- Be natural and conversational\n- NO exclamation points, NO superlatives`;
+}
+```
+
+#### 16.3.4 Multi-Topic Message Composition
+
+For re-engagement with multiple threads, Call 2 receives explicit guidance:
+
+```typescript
+// Call 1 output
+context_for_call_2: {
+  threads: [
+    {topic: 'reassure_about_X', priority: 'high', guidance: 'User asked about X 7 days ago, no responses yet'},
+    {topic: 'update_on_Y', priority: 'medium', guidance: 'Research in progress, expected completion in 2 days'},
+    {topic: 'offer_Z', priority: 'low', guidance: 'High-value intro opportunity available if interested'}
+  ],
+  message_structure: 'sequence_3',
+  tone: 'reassuring'
+}
+
+// Call 2 prompt includes
+## YOUR TASK
+
+Compose a 3-message sequence addressing these topics IN ORDER:
+
+1. **Reassurance:** Let them know we haven't forgotten about X (their CTV vendor question)
+2. **Update:** Progress on Y (research findings coming soon)
+3. **Opportunity:** Offer Z if they're interested (intro to Sarah Chen)
+
+CRITICAL:
+- Each message: 2-3 sentences max
+- Separate messages with "---" on its own line
+- NO exclamation points
+- Natural flow between topics
+- Make it easy for them to respond (yes/no, or ask question)
+
+[Include self-reflection guidance]
+```
+
+### 16.4 Index.ts Refactor Pattern
+
+Both Concierge and Innovator will follow this structure:
+
+```typescript
+export async function invokeConciergeAgent(
+  message: Message,
+  user: User,
+  conversation: Conversation
+): Promise<AgentResponse> {
+
+  // Detect invocation type
+  const isReengagement = message.role === 'system' &&
+    message.content.includes('"type":"re_engagement_check"');
+  const isUserMessage = message.role === 'user';
+  const isSystemTrigger = message.role === 'system' && !isReengagement;
+
+  // Route to appropriate handler
+  if (isReengagement) {
+    return handleReengagement(message, user, conversation);
+  } else if (isUserMessage) {
+    return handleUserMessage(message, user, conversation);
+  } else {
+    return handleSystemTrigger(message, user, conversation);
+  }
+}
+
+async function handleUserMessage(
+  message: Message,
+  user: User,
+  conversation: Conversation
+): Promise<AgentResponse> {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  // Load context (5-10 messages, priorities, requests)
+  const context = await loadConciergeContext(user.id, conversation.id, 'user_message');
+
+  // CALL 1: DECISION (temp 0.1, tool selection and business logic)
+  const decision = await callDecisionLLM(anthropic, message, user, context, 'user_message');
+
+  // Execute tools
+  const toolResults: Record<string, any> = {};
+  for (const tool of decision.tools_to_execute) {
+    const result = await executeTool(tool, user, conversation);
+    // Collect results that Call 2 needs
+    if (tool.tool_name === 'publish_community_request') {
+      toolResults.requestId = result.requestId;
+    }
+    // ... other tool result collection
+  }
+
+  // CALL 2: PERSONALITY (temp 0.7, compose messages)
+  const personalityPrompt = buildPersonalityPrompt(
+    decision.next_scenario,
+    decision.context_for_call_2,
+    toolResults
+  );
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 500,
+    temperature: 0.7,
+    system: personalityPrompt,
+    messages: context.recentMessages.map(m => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.content
+    })).concat([{ role: 'user', content: message.content }])
+  });
+
+  // Parse message sequences (split by "---" delimiter)
+  const textBlocks = response.content.filter(block => block.type === 'text');
+  const rawTexts = textBlocks.map(block => 'text' in block ? block.text.trim() : '').filter(t => t.length > 0);
+  const messageTexts = rawTexts.flatMap(text =>
+    text.split(/\n---\n/).map(msg => msg.trim()).filter(msg => msg.length > 0)
+  );
+
+  return {
+    immediateReply: true,
+    messages: messageTexts,
+    actions: [], // Already executed in Call 1
+    events: []   // Already published in Call 1
+  };
+}
+
+async function handleReengagement(
+  message: Message,
+  user: User,
+  conversation: Conversation
+): Promise<AgentResponse> {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  // Parse re-engagement context from system message
+  const reengagementContext = JSON.parse(message.content);
+
+  // Load FULL context (15-20 messages, all priorities, requests)
+  const context = await loadConciergeContext(user.id, conversation.id, 'reengagement');
+
+  // CALL 1: RE-ENGAGEMENT DECISION (temp 0.6, social judgment)
+  const decision = await callReengagementDecisionLLM(
+    anthropic,
+    user,
+    context,
+    reengagementContext
+  );
+
+  // IF decision says don't message, extend task and return silent
+  if (decision.next_scenario === 'no_message') {
+    console.log(`[Concierge] Re-engagement decision: No message. Reason: ${decision.reasoning}`);
+
+    // Extend re-engagement task
+    await createAgentTask({
+      task_type: 're_engagement_check',
+      agent_type: 'concierge',
+      user_id: user.id,
+      context_id: conversation.id,
+      context_type: 'conversation',
+      scheduled_for: addDays(new Date(), decision.extend_days),
+      priority: 'low',
+      context_json: {
+        attemptCount: reengagementContext.attemptCount + 1,
+        reason: decision.reasoning
+      }
+    });
+
+    return {
+      immediateReply: false,
+      messages: [],
+      actions: [],
+      events: []
+    };
+  }
+
+  // Execute any tools if needed
+  const toolResults: Record<string, any> = {};
+  for (const tool of decision.tools_to_execute || []) {
+    const result = await executeTool(tool, user, conversation);
+    // Collect results for Call 2
+  }
+
+  // CALL 2: PERSONALITY (multi-topic composition)
+  const personalityPrompt = buildPersonalityPrompt(
+    decision.next_scenario,
+    decision.context_for_call_2,
+    toolResults
+  );
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 500,
+    temperature: 0.7,
+    system: personalityPrompt,
+    messages: context.recentMessages.map(m => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.content
+    }))
+  });
+
+  // Parse message sequences
+  const textBlocks = response.content.filter(block => block.type === 'text');
+  const rawTexts = textBlocks.map(block => 'text' in block ? block.text.trim() : '').filter(t => t.length > 0);
+  const messageTexts = rawTexts.flatMap(text =>
+    text.split(/\n---\n/).map(msg => msg.trim()).filter(msg => msg.length > 0)
+  );
+
+  return {
+    immediateReply: true,
+    messages: messageTexts,
+    actions: [],
+    events: []
+  };
+}
+```
+
+### 16.5 Re-Engagement Task Handling
+
+#### 16.5.1 Task Context Structure
+
+```typescript
+{
+  task_type: 're_engagement_check',
+  agent_type: 'concierge' | 'innovator',
+  user_id: 'uuid',
+  context_id: conversation.id,
+  context_type: 'conversation',
+  scheduled_for: futureDate,
+  context_json: {
+    reason: 'user_goal_stored' | 'new_priority' | 'solution_ready',
+
+    // For multi-thread scenarios
+    priority_items: [
+      {item_id: '...', item_type: '...', value_score: 85},
+      {item_id: '...', item_type: '...', value_score: 72}
+    ],
+
+    // User context
+    user_goal: '...',
+    days_since_last_message: 30,
+
+    // Attempt tracking
+    attemptCount: 1,
+    last_attempt_at: '...',
+
+    // Guidance for Call 1
+    guidance: 'Review all open items, assess if user would value hearing from us now'
+  }
+}
+```
+
+#### 16.5.2 Task-Processor Changes
+
+**File:** `packages/services/task-processor/src/handlers/reengagement.ts`
+
+Needs separate handlers for Bouncer vs Concierge/Innovator:
+
+```typescript
+export async function handleReengagementCheck(task: Task): Promise<TaskResult> {
+  if (task.agent_type === 'bouncer') {
+    return handleBouncerReengagement(task); // EXISTING - 2 attempts then pause
+  } else if (task.agent_type === 'concierge') {
+    return handleConciergeReengagement(task); // NEW
+  } else if (task.agent_type === 'innovator') {
+    return handleInnovatorReengagement(task); // NEW
+  }
+}
+
+async function handleConciergeReengagement(task: Task): Promise<TaskResult> {
+  const context = task.context_json as ReengagementContext;
+  const supabase = createServiceClient();
+
+  // Get user
+  const { data: user } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', task.user_id)
+    .single();
+
+  if (!user) {
+    return { success: false, error: 'User not found', shouldRetry: false };
+  }
+
+  // Get conversation
+  const { data: conversation } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('user_id', task.user_id)
+    .eq('status', 'active')
+    .single();
+
+  if (!conversation) {
+    return { success: false, error: 'No active conversation', shouldRetry: false };
+  }
+
+  // Check if user has responded since task created
+  const { data: recentMessages } = await supabase
+    .from('messages')
+    .select('created_at')
+    .eq('conversation_id', conversation.id)
+    .eq('direction', 'inbound')
+    .gte('created_at', task.created_at)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (recentMessages && recentMessages.length > 0) {
+    console.log(`[${task.id}] User has responded, skipping re-engagement`);
+    return {
+      success: true,
+      data: { skipped: true, reason: 'User has responded' }
+    };
+  }
+
+  // Get recent messages for day count
+  const { data: lastMessage } = await supabase
+    .from('messages')
+    .select('created_at')
+    .eq('conversation_id', conversation.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  const daysSinceLastMessage = lastMessage
+    ? Math.floor((Date.now() - new Date(lastMessage.created_at).getTime()) / (1000 * 60 * 60 * 24))
+    : 999;
+
+  // Create system message to trigger Concierge agent
+  const systemMessageContent = JSON.stringify({
+    type: 're_engagement_check',
+    attemptCount: context.attemptCount || 1,
+    daysSinceLastMessage,
+    userGoal: (user.response_pattern as any)?.user_goal,
+    guidance: 'Review all open items and conversation history. Decide if user would value hearing from us now. If yes, compose multi-topic message addressing highest-value items.'
+  });
+
+  const { error: messageError } = await supabase.from('messages').insert({
+    conversation_id: conversation.id,
+    user_id: user.id,
+    role: 'system',
+    content: systemMessageContent,
+    direction: 'inbound',  // ✅ CRITICAL - won't trigger SMS send
+    status: 'pending'
+  });
+
+  if (messageError) {
+    return {
+      success: false,
+      error: `Failed to create re-engagement system message: ${messageError.message}`,
+      shouldRetry: true
+    };
+  }
+
+  console.log(`[${task.id}] Created Concierge re-engagement system message for ${user.phone_number}`);
+
+  // Log action
+  await supabase.from('agent_actions_log').insert({
+    agent_type: 'task_processor',
+    action_type: 're_engagement_check',
+    user_id: task.user_id,
+    context_id: task.id,
+    context_type: 'agent_task',
+    input_data: context,
+    output_data: { attemptCount: context.attemptCount || 1, sent: true }
+  });
+
+  return {
+    success: true,
+    data: {
+      attemptCount: context.attemptCount || 1,
+      systemMessageCreated: true
+    }
+  };
+}
+```
+
+**Key Difference from Bouncer:**
+- Bouncer: 2-attempt hard limit, pause conversation after
+- Concierge/Innovator: Agent decides whether to message AND whether to schedule another follow-up
+  - If high-value opportunity: message now, maybe schedule 7-day check
+  - If low-value / user busy: extend to 30-90 days
+  - If user disengaged: don't message, mark task complete
+
+### 16.6 Tool Execution & Results Passing
+
+#### 16.6.1 Tool Results Structure
+
+Call 1 executes tools and collects results to pass to Call 2:
+
+```typescript
+const toolResults: Record<string, any> = {};
+
+for (const tool of decision.tools_to_execute) {
+  const result = await executeTool(tool, user, conversation);
+
+  // Collect specific results that Call 2 needs
+  switch (tool.tool_name) {
+    case 'publish_community_request':
+      toolResults.requestId = result.requestId;
+      toolResults.requestSummary = tool.params.request_summary;
+      break;
+
+    case 'create_intro_opportunity':
+      toolResults.introId = result.introId;
+      toolResults.prospectName = tool.params.prospect_name;
+      break;
+
+    case 'request_solution_research':
+      toolResults.researchId = result.researchId;
+      toolResults.category = tool.params.category;
+      break;
+
+    // Add other tools as needed
+  }
+}
+
+// Pass to Call 2
+context_for_call_2.tool_results = toolResults;
+```
+
+#### 16.6.2 Call 2 Prompt with Tool Results
+
+```typescript
+## TOOL ACTIONS TAKEN
+
+You just executed these tools:
+${decision.tools_to_execute.map(t => `- ${t.tool_name}: ${JSON.stringify(t.params)}`).join('\n')}
+
+Results:
+${JSON.stringify(toolResults, null, 2)}
+
+## YOUR TASK
+
+Compose message(s) that:
+1. Acknowledge what the user said
+2. Explain what you're doing (based on tools executed)
+3. Provide any specific info from tool results (e.g., request ID, intro opportunity details)
+4. Continue conversation naturally
+
+Example:
+- If published community request: "Got it, I'll get that question out to the network"
+- If created intro opportunity: "I can connect you with Sarah at Hulu. She scaled their CTV platform from 0 to $500M. Worth a conversation?"
+- If requested solution research: "I'll look into CTV vendors and get back to you in the next couple days"
+
+Keep it SHORT (2-3 sentences max per message).
+```
+
+### 16.7 Testing Strategy
+
+#### 16.7.1 Test Scenarios - Concierge Re-Engagement
+
+**Scenario A: Multi-Thread Happy Path**
+```
+Setup:
+- User asked community question 7 days ago, no responses yet
+- Account Manager created high-priority intro opportunity (score 85)
+- User goal stored: "Find CTV vendors"
+
+Expected Behavior:
+- Call 1: Decides to message with 2-message sequence
+- Call 2: Composes sequence
+  * Message 1: Reassure about community question
+  * Message 2: Offer intro opportunity
+
+Validation:
+- Verify 2 messages sent via SMS
+- Verify messages address both threads
+- Verify tone is reassuring and brief
+```
+
+**Scenario B: No High-Value Items**
+```
+Setup:
+- User last messaged 30 days ago
+- No priorities above score 50
+- No outstanding requests
+
+Expected Behavior:
+- Call 1: Decides NOT to message, extends to 60 days
+- No Call 2
+- No SMS sent
+
+Validation:
+- Verify no messages sent
+- Verify new re-engagement task created (scheduled_for = +60 days)
+- Verify reasoning logged
+```
+
+**Scenario C: User Overwhelmed**
+```
+Setup:
+- Conversation history shows user frustrated ("getting too many messages")
+- Multiple high-priority items available
+
+Expected Behavior:
+- Call 1: Detects user frustration, decides NOT to message
+- Extends to 90 days
+- Logs reason: "User expressed frustration with message volume"
+
+Validation:
+- Verify no messages sent
+- Verify extended re-engagement task
+- Verify reasoning includes user frustration
+```
+
+**Scenario D: Solution Ready**
+```
+Setup:
+- Solution Saga completed research
+- User hasn't responded in 3 days
+
+Expected Behavior:
+- Call 1: Decides to message with single-message
+- Call 2: Composes brief update with research summary
+
+Validation:
+- Verify 1 message sent
+- Verify message mentions research findings
+- Verify tone is informative and brief
+```
+
+#### 16.7.2 Edge Cases to Handle
+
+1. **Tool execution fails in Call 1:**
+   - Log error with full context
+   - Pass error context to Call 2
+   - Call 2 composes apologetic message ("Having trouble with that right now, will follow up soon")
+
+2. **Re-engagement during quiet hours:**
+   - Task fires but user has quiet hours set
+   - System message created but marked as queued
+   - Message-orchestrator processes when quiet hours end
+
+3. **User responds while re-engagement task pending:**
+   - Check message timestamps in task handler
+   - Skip re-engagement if user already responded since task created
+
+4. **Multiple re-engagement tasks for same user:**
+   - Task-processor deduplication logic
+   - Only process most recent task per user
+
+5. **Leaked JSON from Call 2 (self-reflection test):**
+   - Inject malformed message in test conversation history
+   - Verify Call 2 detects and acknowledges with humor
+   - Verify recovery message is sent
+
+6. **System message direction bug (critical):**
+   - Unit test: verify all system messages have `direction: 'inbound'`
+   - Integration test: verify system messages DON'T trigger SMS webhook
+   - Code review checklist before every merge
+
+### 16.8 Cost & Performance Optimization
+
+#### 16.8.1 Prompt Caching
+
+Both agents should cache:
+- Personality prompts (static, large ~4000 tokens)
+- Scenario guidance (static, ~2000 tokens)
+- User context (changes infrequently, ~500 tokens)
+
+**Estimated savings:** ~60-70% cost reduction on Call 2
+
+**Implementation:**
+```typescript
+// In Call 2 prompt construction
+const systemBlocks = [
+  {
+    type: 'text',
+    text: CONCIERGE_PERSONALITY,
+    cache_control: { type: 'ephemeral' }  // Cache personality
+  },
+  {
+    type: 'text',
+    text: scenarioGuidance,
+    cache_control: { type: 'ephemeral' }  // Cache scenarios
+  },
+  {
+    type: 'text',
+    text: specificGuidanceForThisInvocation  // Don't cache (dynamic)
+  }
+];
+```
+
+#### 16.8.2 Token Budgets
+
+| Call | Concierge | Innovator | Reason |
+|------|-----------|-----------|--------|
+| Call 1 | 800 tokens | 1000 tokens | Innovator has more tools (9 vs 5) → needs more tokens for decision |
+| Call 2 | 500 tokens | 500 tokens | Same brevity requirement (2-3 sentences per message) |
+
+#### 16.8.3 Re-Engagement Throttling
+
+Prevent re-engagement spam:
+- Max 1 re-engagement message per 7 days per user
+- If user hasn't responded to 3 re-engagements in 90 days → pause indefinitely
+- Account Manager can override for critical priorities (score >90)
+
+**Implementation:**
+```typescript
+// In task-processor re-engagement handler
+// Check recent re-engagement attempts
+const { data: recentAttempts } = await supabase
+  .from('agent_actions_log')
+  .select('created_at')
+  .eq('user_id', task.user_id)
+  .eq('action_type', 're_engagement_check')
+  .gte('created_at', sevenDaysAgo)
+  .order('created_at', { ascending: false });
+
+if (recentAttempts && recentAttempts.length > 0) {
+  console.log(`[${task.id}] Throttling: User received re-engagement in last 7 days`);
+  // Extend task by 7 days
+  return { success: true, data: { throttled: true } };
+}
+```
+
+### 16.9 Potential Issues & Mitigations
+
+#### 16.9.1 Call 1 Decision Overwhelm (9 tools for Innovator)
+
+**Issue:** LLM may struggle to select correct tools when many options available
+
+**Mitigations:**
+1. Clear tool categorization in prompt (Concierge tools vs Innovator tools)
+2. Provide examples of tool combinations
+3. Use temperature 0.1 for consistency
+4. Group tools by purpose in system prompt
+
+**Test:** Verify LLM can select correct tools in complex scenarios (95%+ accuracy target)
+
+#### 16.9.2 Call 2 Multi-Topic Composition Feels Disjointed
+
+**Issue:** Messages addressing multiple topics may feel awkward or forced
+
+**Mitigations:**
+1. Explicit message structure guidance ("Start with X, then Y, then Z")
+2. Few-shot examples of natural multi-topic messages
+3. Temperature 0.7 for creative flow
+4. Use message sequences to separate distinct ideas
+
+**Test:** Human review of generated sequences for natural flow
+
+#### 16.9.3 Re-Engagement Decision Paralysis (Too Many Threads)
+
+**Issue:** Call 1 may struggle to decide when presented with 5+ open items
+
+**Mitigations:**
+1. Limit to top 3 priorities in Call 1 context
+2. Clear prioritization criteria (value_score > 70 = high priority)
+3. Temperature 0.6 for nuanced but consistent judgment
+4. Explicit guidance: "Don't try to address everything. Pick top 1-2."
+
+**Test:** Measure decision consistency across similar scenarios
+
+#### 16.9.4 Self-Reflection False Positives
+
+**Issue:** LLM may detect "errors" that aren't actually problems
+
+**Mitigations:**
+1. Explicit guidance: "ONLY acknowledge if there's a REAL problem"
+2. Examples of what counts as an error vs normal conversation
+3. Test with various conversation patterns
+
+**Test:** Inject normal conversations, verify no false alarms
+
+#### 16.9.5 System Messages Triggering SMS Sends (Critical Bug)
+
+**Issue:** System messages with `direction: 'outbound'` trigger SMS webhook
+
+**Mitigations:**
+1. Code review checklist: ALL system messages must have `direction: 'inbound'`
+2. Unit tests: Verify system message insertion uses correct direction
+3. Integration tests: Verify system messages don't trigger webhook
+4. Type-safe enum for direction field (prevent typos)
+
+**Test:** Integration test verifying `direction: 'inbound'` doesn't trigger webhook
+
+#### 16.9.6 Re-Engagement Loops
+
+**Issue:** Agent keeps creating tasks, leading to spam
+
+**Mitigations:**
+1. Task-processor tracks attempt count globally
+2. Max 5 re-engagements per user per 90 days (configurable)
+3. Exponential backoff: 7d → 14d → 30d → 60d → 90d
+4. User can opt out: "Don't follow up on this"
+
+**Test:** Simulate unresponsive user, verify eventual pause
+
+#### 16.9.7 Tool Execution Latency
+
+**Issue:** Multiple tool executions in Call 1 may delay Call 2
+
+**Mitigations:**
+1. Parallelize independent tool executions
+2. Set tool execution timeout (5s per tool)
+3. Log slow tools for optimization
+4. Consider async tool execution for non-critical tools
+
+**Test:** Measure end-to-end latency, target <4s total for user messages
+
+### 16.10 Implementation Plan
+
+#### Week 1: Concierge Personality & Decision (No Re-Engagement)
+- [ ] Create `packages/agents/concierge/src/personality.ts`
+- [ ] Create `packages/agents/concierge/src/decision.ts`
+- [ ] Define CONCIERGE_PERSONALITY constant
+- [ ] Define SCENARIO_GUIDANCE map
+- [ ] Implement buildPersonalityPrompt()
+- [ ] Write Call 1 decision logic for user messages only
+
+#### Week 2: Concierge Index.ts Refactor (User Messages Only)
+- [ ] Refactor `packages/agents/concierge/src/index.ts`
+- [ ] Implement handleUserMessage() with 2-LLM pattern
+- [ ] Tool execution and result collection
+- [ ] Message sequence parsing ("---" delimiter)
+- [ ] Unit tests for user message handling
+- [ ] Integration tests with twilio-webhook
+
+#### Week 3: Concierge Re-Engagement Handler
+- [ ] Implement handleReengagement() in index.ts
+- [ ] Create re-engagement decision prompt
+- [ ] Multi-thread analysis logic
+- [ ] Social judgment guidance (temp 0.6)
+- [ ] Update task-processor with handleConciergeReengagement()
+- [ ] System message creation with `direction: 'inbound'`
+
+#### Week 4: Testing & Refinement
+- [ ] Test Scenario A: Multi-thread happy path
+- [ ] Test Scenario B: No high-value items
+- [ ] Test Scenario C: User overwhelmed
+- [ ] Test Scenario D: Solution ready
+- [ ] Edge case testing (quiet hours, user responds, etc.)
+- [ ] Self-reflection testing (inject malformed messages)
+- [ ] Human review of message quality
+
+#### Week 5: Innovator Implementation
+- [ ] Create `packages/agents/innovator/src/personality.ts`
+- [ ] Create `packages/agents/innovator/src/decision.ts`
+- [ ] Define INNOVATOR_PERSONALITY (extends Concierge tone)
+- [ ] Add 4 innovator-specific tools to decision logic
+- [ ] Refactor `packages/agents/innovator/src/index.ts`
+- [ ] Implement handleInnovatorReengagement() in task-processor
+
+#### Week 6: End-to-End Testing & Documentation
+- [ ] Full integration testing (Concierge + Innovator)
+- [ ] Performance testing (latency, token usage)
+- [ ] Cost analysis (compare to single-LLM baseline)
+- [ ] Update this section with learnings
+- [ ] Deploy to production with gradual rollout
+
+### 16.11 Success Criteria
+
+- [ ] Call 1 reliably selects correct tools (95%+ accuracy in testing)
+- [ ] Call 2 maintains personality (no JSON leaks, no robotic tone)
+- [ ] Multi-topic re-engagement messages flow naturally (human review)
+- [ ] No system message SMS sends (integration tests pass)
+- [ ] Re-engagement doesn't spam users (max 1 per 7 days)
+- [ ] Self-reflection catches real errors without false positives
+- [ ] Cost increase <50% vs current single-LLM implementation (offset by prompt caching)
+- [ ] Latency <4s for user messages, <6s for re-engagement
+
+### t.12 References
+
+- **Bouncer 2-LLM Implementation:** Section 4.2.1
+- **Self-Reflection Pattern:** Section 4.2.1 (Call 2 Self-Reflection and Error Recovery)
+- **System Message Direction Bug:** Section 4.2.1 (Critical Bug Fix: System Message Direction)
+- **Concierge Tools:** Section 4.3 (Concierge Tools)
+- **Innovator Tools:** Section 4.3 (Innovator-Specific Tools)
+- **Message Sequences:** Bouncer personality.ts implementation (packages/agents/bouncer/src/personality.ts)
+
+---
+
+***
+
+**END OF REQUIREMENTS DOCUMENT**

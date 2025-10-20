@@ -1,0 +1,37 @@
+{
+  "name": "@yachtparty/agent-bouncer",
+  "version": "1.0.0",
+  "description": "Bouncer Agent - Onboards new users through verification process",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test-chat": "tsx test-chat.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "yachtparty",
+    "agent",
+    "bouncer",
+    "onboarding"
+  ],
+  "author": "Yachtparty",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "@anthropic-ai/sdk": "^0.27.0",
+    "dotenv": "^16.3.1",
+    "@yachtparty/shared": "file:../../shared"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

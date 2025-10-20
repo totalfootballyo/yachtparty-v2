@@ -1,0 +1,45 @@
+{
+  "name": "@yachtparty/task-processor",
+  "version": "1.0.0",
+  "description": "Task Processor service for Yachtparty - always-on Cloud Run service that processes scheduled agent tasks",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit",
+    "docker:build": "docker build -t task-processor .",
+    "docker:run": "docker run -p 8080:8080 --env-file .env task-processor",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --watch"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@supabase/supabase-js": "^2.45.4",
+    "@yachtparty/agent-concierge": "file:../../agents/concierge",
+    "@yachtparty/shared": "file:../../shared",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.16.11",
+    "eslint": "^8.57.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  },
+  "keywords": [
+    "task-processor",
+    "agent-tasks",
+    "scheduled-tasks",
+    "cloud-run",
+    "yachtparty"
+  ],
+  "author": "Yachtparty",
+  "license": "UNLICENSED",
+  "private": true
+}
