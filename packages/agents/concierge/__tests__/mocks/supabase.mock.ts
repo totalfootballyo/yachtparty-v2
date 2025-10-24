@@ -18,6 +18,10 @@ export function createMockSupabaseClient(data: {
   events?: any[];
   tasks?: any[];
   agentActionsLog?: any[];
+  innovatorProfiles?: any[];
+  prospectMatches?: any[];
+  introOpportunities?: any[];
+  pendingIntros?: any[];
 }) {
   const mockData = {
     users: data.users || [],
@@ -28,6 +32,10 @@ export function createMockSupabaseClient(data: {
     events: data.events || [],
     tasks: data.tasks || [],
     agentActionsLog: data.agentActionsLog || [],
+    innovatorProfiles: data.innovatorProfiles || [],
+    prospectMatches: data.prospectMatches || [],
+    introOpportunities: data.introOpportunities || [],
+    pendingIntros: data.pendingIntros || [],
   };
 
   // Track inserted data

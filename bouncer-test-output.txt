@@ -1,0 +1,1165 @@
+
+> @yachtparty/agent-bouncer@1.0.0 test
+> jest
+
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+FAIL __tests__/bouncer.reengagement.test.ts (37.67 s)
+  ● Console
+
+    console.log
+      [2-LLM] Starting Call 1: Re-engagement decision (attempt 1)
+
+      at handleReengagement (src/index.ts:245:11)
+
+    console.log
+      [2-LLM] Re-engagement decision: ask_for_company_and_title, tools: 1
+
+      at handleReengagement (src/index.ts:275:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Re-engagement personality response
+
+      at handleReengagement (src/index.ts:318:13)
+
+    console.log
+      
+      === First Re-engagement Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:104:15)
+
+    console.log
+      Context: 25h since last message, attempt 1
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:105:15)
+
+    console.log
+      Missing fields: email
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:106:15)
+
+    console.log
+      Agent response: Hey Sarah, just checking in. Still interested in getting access?
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:107:15)
+
+    console.log
+      Tone: Soft, brief, not pushy
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:108:15)
+
+    console.log
+      ================================
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:109:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Re-engagement decision (attempt 2)
+
+      at handleReengagement (src/index.ts:245:11)
+
+    console.log
+      [2-LLM] Re-engagement decision: request_email_verification, tools: 0
+
+      at handleReengagement (src/index.ts:275:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Re-engagement personality response
+
+      at handleReengagement (src/index.ts:318:13)
+
+    console.log
+      [2-LLM] Stopping re-engagement for user test-user-001 after 2 attempts - conversation will be paused
+
+      at handleReengagement (src/index.ts:363:13)
+
+    console.log
+      [2-LLM] Starting Call 1: Re-engagement decision (attempt 3)
+
+      at handleReengagement (src/index.ts:245:11)
+
+    console.log
+      [2-LLM] Re-engagement decision: no_message, tools: 0
+
+      at handleReengagement (src/index.ts:275:11)
+
+    console.log
+      [2-LLM] Stopping re-engagement for user test-user-001 after 3 attempts - conversation will be paused
+
+      at handleReengagement (src/index.ts:363:13)
+
+    console.log
+      
+      === Third Attempt (Should NOT Message) Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:216:15)
+
+    console.log
+      Context: 73h since last message, attempt 3
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:217:15)
+
+    console.log
+      Decision: NO message sent (2-attempt limit)
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:218:15)
+
+    console.log
+      Actions:
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:219:15)
+
+    console.log
+      ===============================================
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:220:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: request_email_verification, tools: 2
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Generated verification email: verify-test-user-001@verify.yachtparty.xyz
+
+      at handleUserMessage (src/index.ts:457:15)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {"verificationEmail":"verify-test-user-001@verify.yachtparty.xyz"}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === User Responds After Re-engagement Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:263:15)
+
+    console.log
+      User message: sarah.chen@acme.com
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:264:15)
+
+    console.log
+      Agent response: Got it. Please send a quick email from sarah.chen@acme.com to verify-test-user-001@verify.yachtparty.xyz. We'll never sell your contact info, just need to verify your role.
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:265:15)
+
+    console.log
+      Decision: Continue onboarding normally
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:266:15)
+
+    console.log
+      ==============================================
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:267:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Re-engagement decision (attempt 1)
+
+      at handleReengagement (src/index.ts:245:11)
+
+    console.log
+      [2-LLM] Re-engagement decision: no_message, tools: 0
+
+      at handleReengagement (src/index.ts:275:11)
+
+    console.log
+      
+      === Disinterest Detection Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:356:15)
+
+    console.log
+      Context: User said "not interested"
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:357:15)
+
+    console.log
+      Decision: No message
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:358:15)
+
+    console.log
+      Agent response: No messages
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:359:15)
+
+    console.log
+      Actions: create_task
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:360:15)
+
+    console.log
+      ==================================
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:361:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Re-engagement decision (attempt 1)
+
+      at handleReengagement (src/index.ts:245:11)
+
+    console.log
+      [2-LLM] Re-engagement decision: ask_for_company_and_title, tools: 0
+
+      at handleReengagement (src/index.ts:275:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Re-engagement personality response
+
+      at handleReengagement (src/index.ts:318:13)
+
+    console.log
+      
+      === Re-engagement Tone Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:424:15)
+
+    console.log
+      Agent response: Hey Sarah. Still need to know where you work and what you do there to get you verified.
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:425:15)
+
+    console.log
+      Tone check: Soft, non-demanding
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:426:15)
+
+    console.log
+      ===============================
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:427:15)
+
+  ● Bouncer Agent - Re-engagement Logic › Second Re-engagement Attempt › should send final follow-up before pausing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      161 |         allText.includes('let me know') ||
+      162 |         allText.includes('reach out if');
+    > 163 |       expect(givesOut).toBe(true);
+          |                        ^
+      164 |
+      165 |       console.log('\n=== Second Re-engagement Test ===');
+      166 |       console.log('Context: 49h since last message, attempt 2');
+
+      at Object.<anonymous> (__tests__/bouncer.reengagement.test.ts:163:24)
+
+FAIL __tests__/bouncer.onboarding.test.ts (41.264 s)
+  ● Console
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_referrer, tools: 0
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Brand New User Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:92:15)
+
+    console.log
+      User message: Hi there
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:93:15)
+
+    console.log
+      Agent response: Hey... who told you about this?
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:94:15)
+
+    console.log
+      Actions:
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:95:15)
+
+    console.log
+      ============================
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:96:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_name, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_company_and_title, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: request_email_verification, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Company/Title Collection Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:235:15)
+
+    console.log
+      User message: Acme Corp, VP of Marketing
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:236:15)
+
+    console.log
+      Agent response: VP of Marketing at Acme Corp. Got it. Please send a quick email from your work address to hello@yachtparty.com. We'll never sell your contact info, just need to verify your role.
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:237:15)
+
+    console.log
+      Actions: update_user_field
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:238:15)
+
+    console.log
+      ======================================
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:239:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: request_email_verification, tools: 2
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Generated verification email: verify-test-user-001@verify.yachtparty.xyz
+
+      at handleUserMessage (src/index.ts:457:15)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {"verificationEmail":"verify-test-user-001@verify.yachtparty.xyz"}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Email Collection Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:282:15)
+
+    console.log
+      User message: sarah.chen@acme.com
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:283:15)
+
+    console.log
+      Agent response: Got it. Please send a quick email from your work address to verify-test-user-001@verify.yachtparty.xyz. We'll never sell your contact info, just need to verify your role.
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:284:15)
+
+    console.log
+      Actions: update_user_field, create_verification_task
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:285:15)
+
+    console.log
+      =============================
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:286:15)
+
+    console.log
+      [2-LLM] Email verification acknowledged - using personality prompt
+
+      at handleEmailVerifiedAcknowledgment (src/index.ts:685:11)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_referrer, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === All-At-Once Info Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:381:15)
+
+    console.log
+      User message: Hi, I'm Sarah Chen from Acme Corp where I'm VP of Marketing. My email is sarah.chen@acme.com
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:382:15)
+
+    console.log
+      Agent response: Hey... who told you about this?
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:383:15)
+
+    console.log
+      Actions: update_user_field
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:384:15)
+
+    console.log
+      =============================
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:385:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_referrer, tools: 0
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Tone Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:421:15)
+
+    console.log
+      User message: Hi there
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:422:15)
+
+    console.log
+      Agent response: Hey... who told you about this?
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:423:15)
+
+    console.log
+      Tone check: Professional, not salesy
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:424:15)
+
+    console.log
+      =================
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:425:15)
+
+  ● Bouncer Agent - Onboarding Flow › Referrer Collection: Exact Match › should match referrer name to existing user and set referred_by
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      130 |
+      131 |       // Should collect referrer info
+    > 132 |       expect(response.actions.some(a => a.type === 'update_user_field')).toBe(true);
+          |                                                                          ^
+      133 |
+      134 |       // Should move to next step (ask for name)
+      135 |       const allText = response.messages?.join(' ').toLowerCase() || '';
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:132:74)
+
+  ● Bouncer Agent - Onboarding Flow › Name Collection › should extract first and last name and ask for company
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      183 |         allText.includes('what company') ||
+      184 |         allText.includes('who do you work for');
+    > 185 |       expect(asksForCompany).toBe(true);
+          |                              ^
+      186 |
+      187 |       console.log('\n=== Name Collection Test ===');
+      188 |       console.log('User message:', incomingMessage.content);
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:185:30)
+
+  ● Bouncer Agent - Onboarding Flow › Onboarding Completion › should complete onboarding when email is verified
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      325 |
+      326 |       // Should mark user as verified
+    > 327 |       expect(response.actions.some(a => a.type === 'mark_user_verified')).toBe(true);
+          |                                                                           ^
+      328 |
+      329 |       // Should publish user.verified event
+      330 |       if (response.events) {
+
+      at Object.<anonymous> (__tests__/bouncer.onboarding.test.ts:327:75)
+
+FAIL __tests__/bouncer.edgecases.test.ts (56.768 s)
+  ● Console
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_name, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Fuzzy Referrer Match Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:83:15)
+
+    console.log
+      User said: "Ben"
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:84:15)
+
+    console.log
+      Database has: "Ben Trenda"
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:85:15)
+
+    console.log
+      Agent response: Got it, thanks. I'm the bouncer so I had to ask. What's your name?
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:86:15)
+
+    console.log
+      Actions: set_referrer
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:87:15)
+
+    console.log
+      =================================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:88:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_name, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_last_name, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Single Name Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:176:15)
+
+    console.log
+      User: Sarah
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:177:15)
+
+    console.log
+      Agent response: Got it, Sarah. Do you have a last name too, or are you like Madonna?
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:178:15)
+
+    console.log
+      ========================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:179:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_company_and_title, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 3 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Middle Name Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:218:15)
+
+    console.log
+      User: Sarah Marie Chen
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:219:15)
+
+    console.log
+      Agent response: Got it, Sarah. Do you have a last name too, or are you like Madonna?
+      Wait, that was your full name wasn't it. My bad.
+      Everyone here is a verified industry leader, so I need to ask where you work and what you do there.
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:220:15)
+
+    console.log
+      Actions: update_user_field
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:221:15)
+
+    console.log
+      ========================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:222:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: request_email_verification, tools: 2
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Generated verification email: verify-test-user-001@verify.yachtparty.xyz
+
+      at handleUserMessage (src/index.ts:457:15)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {"verificationEmail":"verify-test-user-001@verify.yachtparty.xyz"}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Email in Sentence Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:264:15)
+
+    console.log
+      User: It's sarah.chen@acme.com
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:265:15)
+
+    console.log
+      Agent response: Got it. Please send a quick email from your work address to verify-test-user-001@verify.yachtparty.xyz. We'll never sell your contact info, just need to verify your role.
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:266:15)
+
+    console.log
+      Actions: update_user_field, create_verification_task
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:267:15)
+
+    console.log
+      ==============================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:268:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_company_and_title, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Out of Order Info Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:307:15)
+
+    console.log
+      User provides company before name
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:308:15)
+
+    console.log
+      User: I work at Acme Corp
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:309:15)
+
+    console.log
+      Agent response: Got it. What do you do there?
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:310:15)
+
+    console.log
+      Actions: update_user_field
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:311:15)
+
+    console.log
+      ==============================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:312:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_company_and_title, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Brief Response Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:351:15)
+
+    console.log
+      User: Acme
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:352:15)
+
+    console.log
+      Agent response: Got it. Everyone here is a verified industry leader, so I need to ask where you work and what you do there.
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:353:15)
+
+    console.log
+      ===========================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:354:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: acknowledge_completion, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 2 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Nomination Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:394:15)
+
+    console.log
+      User nominates: Mike Johnson
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:395:15)
+
+    console.log
+      Agent response: Got it, thanks for the nomination. I'll pass Mike Johnson's info along to the team.
+      Just so you know, we're pretty selective about who gets in, so no guarantees. But we appreciate you thinking of us.
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:396:15)
+
+    console.log
+      Actions: show_intro_opportunity
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:397:15)
+
+    console.log
+      =======================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:398:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: acknowledge_completion, tools: 1
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === LinkedIn URL Extraction Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:437:15)
+
+    console.log
+      User provides: linkedin.com/in/sarahchen
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:438:15)
+
+    console.log
+      Agent response: Got your LinkedIn. We'll review everything and get you set up soon.
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:439:15)
+
+    console.log
+      Actions: update_user_field
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:440:15)
+
+    console.log
+      ====================================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:441:15)
+
+    console.log
+      [2-LLM] Starting Call 1: Decision making (user message)
+
+      at handleUserMessage (src/index.ts:401:11)
+
+    console.log
+      [2-LLM] Decision: ask_for_referrer, tools: 0
+
+      at handleUserMessage (src/index.ts:431:11)
+
+    console.log
+      [2-LLM] Tool results for Call 2: {}
+
+      at handleUserMessage (src/index.ts:461:11)
+
+    console.log
+      [2-LLM] Starting Call 2: Personality response
+
+      at handleUserMessage (src/index.ts:476:11)
+
+    console.log
+      [2-LLM] Response generated: 1 messages
+
+      at handleUserMessage (src/index.ts:506:11)
+
+    console.log
+      
+      === Tone Consistency Test ===
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:486:15)
+
+    console.log
+      User (enthusiastic): Hey! Super excited to be here! This looks amazing!
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:487:15)
+
+    console.log
+      Agent (professional): Hey... who told you about this?
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:488:15)
+
+    console.log
+      Tone: Maintains gatekeeper tone, not overeager
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:489:15)
+
+    console.log
+      =============================
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:490:15)
+
+  ● Bouncer Agent - Edge Cases › Referrer Matching: No Match › should store name_dropped when referrer not found in database
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      120 |
+      121 |       // Should store name_dropped for manual review
+    > 122 |       expect(response.actions.some(a => a.type === 'update_user_field')).toBe(true);
+          |                                                                          ^
+      123 |
+      124 |       // Should continue onboarding (ask for name)
+      125 |       expect(response.messages && response.messages.length).toBeGreaterThan(0);
+
+      at Object.<anonymous> (__tests__/bouncer.edgecases.test.ts:122:74)
+
+Test Suites: 3 failed, 3 total
+Tests:       5 failed, 19 passed, 24 total
+Snapshots:   0 total
+Time:        57.133 s
+Ran all test suites.

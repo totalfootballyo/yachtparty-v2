@@ -11,6 +11,7 @@
  */
 
 import { createServiceClient } from './supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Event, AgentTask } from '../types/database';
 import type { PublishEventParams } from '../types/events';
 import type { Priority, TaskType, AgentType } from '../types/agents';
@@ -57,6 +58,7 @@ export interface CreateTaskParams {
  * All events are stored for complete audit trail and replay capability.
  *
  * @param params - Event publication parameters
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns The created event record
  * @throws Error if event creation fails
  *
@@ -79,9 +81,10 @@ export interface CreateTaskParams {
  * ```
  */
 export async function publishEvent<T = unknown>(
-  params: PublishEventParams<T>
+  params: PublishEventParams<T>,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<Event> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   const eventRecord = {
     event_type: params.event_type,
@@ -115,6 +118,7 @@ export async function publishEvent<T = unknown>(
  * duplicate processing.
  *
  * @param params - Task creation parameters
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns The created agent task record
  * @throws Error if task creation fails
  *
@@ -137,8 +141,11 @@ export async function publishEvent<T = unknown>(
  * });
  * ```
  */
-export async function createAgentTask(params: CreateTaskParams): Promise<AgentTask> {
-  const supabase = createServiceClient();
+export async function createAgentTask(
+  params: CreateTaskParams,
+  dbClient: SupabaseClient = createServiceClient()
+): Promise<AgentTask> {
+  const supabase = dbClient;
 
   const taskRecord = {
     task_type: params.task_type,
@@ -177,6 +184,7 @@ export async function createAgentTask(params: CreateTaskParams): Promise<AgentTa
  * as processed to prevent duplicate handling.
  *
  * @param eventId - The unique identifier of the event
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns The updated event record
  * @throws Error if update fails
  *
@@ -190,8 +198,11 @@ export async function createAgentTask(params: CreateTaskParams): Promise<AgentTa
  * }
  * ```
  */
-export async function markEventProcessed(eventId: string): Promise<Event> {
-  const supabase = createServiceClient();
+export async function markEventProcessed(
+  eventId: string,
+  dbClient: SupabaseClient = createServiceClient()
+): Promise<Event> {
+  const supabase = dbClient;
 
   const { data, error } = await supabase
     .from('events')
@@ -216,6 +227,7 @@ export async function markEventProcessed(eventId: string): Promise<Event> {
  *
  * @param eventType - Optional event type filter (e.g., 'user.message.received')
  * @param limit - Maximum number of events to retrieve (default: 100)
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns Array of unprocessed event records (may be empty)
  * @throws Error if query fails
  *
@@ -240,9 +252,10 @@ export async function markEventProcessed(eventId: string): Promise<Event> {
  */
 export async function getUnprocessedEvents(
   eventType?: string,
-  limit: number = 100
+  limit: number = 100,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<Event[]> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   let query = supabase
     .from('events')

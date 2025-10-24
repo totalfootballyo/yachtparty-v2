@@ -126,9 +126,28 @@ export async function callUserMessageDecision(
 
   // Parse JSON response
   const cleanedText = textBlock.text.trim().replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
-  const decision: Call1Output = JSON.parse(cleanedText);
 
-  return decision;
+  try {
+    const decision: Call1Output = JSON.parse(cleanedText);
+    return decision;
+  } catch (error) {
+    console.error('[Concierge Call 1] Failed to parse JSON:', error);
+    console.error('[Concierge Call 1] Raw response:', cleanedText);
+
+    // Fallback to safe default that won't crash
+    return {
+      tools_to_execute: [],
+      next_scenario: 'general_response',
+      context_for_call_2: {
+        primary_topic: 'processing your request',
+        tone: 'helpful',
+        personalization_hooks: {
+          user_name: context.user.first_name || undefined,
+          recent_context: 'Having trouble understanding that right now'
+        }
+      }
+    };
+  }
 }
 
 /**
@@ -201,19 +220,96 @@ ${messageHistory}${prioritiesSection}${outstandingSection}${pendingResponseSecti
    - Required params: description
    - Optional params: category, urgency
 
-3. **create_intro_opportunity**
-   - Use when: User wants to connect with someone specific
-   - Required params: prospect_name
-   - Optional params: prospect_company, reason
+3. **offer_introduction**
+   - Use when: User spontaneously offers to introduce a prospect to someone on the platform
+   - Example: "I can introduce you to Sarah at Google"
+   - Required params: prospect_name, introducee_user_id
+   - Optional params: prospect_company, prospect_title, prospect_context, context_type, context_id
+   - CRITICAL: Only use if user is OFFERING to make an intro, not REQUESTING one
 
-4. **store_user_goal**
+4. **accept_intro_opportunity**
+   - Use when: User accepts an intro opportunity from their priorities
+   - Required params: intro_opportunity_id
+   - Note: This is for when they agree to make an intro as a connector
+
+5. **decline_intro_opportunity**
+   - Use when: User declines an intro opportunity
+   - Required params: intro_opportunity_id
+   - Optional params: reason
+
+6. **accept_intro_offer**
+   - Use when: User accepts an intro offer (someone offered to introduce them)
+   - Required params: intro_offer_id
+
+7. **decline_intro_offer**
+   - Use when: User declines an intro offer
+   - Required params: intro_offer_id
+   - Optional params: reason
+
+8. **confirm_intro_offer**
+   - Use when: User confirms they completed an intro they offered to make
+   - Required params: intro_offer_id
+
+9. **accept_connection_request**
+   - Use when: User accepts a connection request (someone wants to be introduced to them)
+   - Required params: connection_request_id
+
+10. **decline_connection_request**
+    - Use when: User declines a connection request
+    - Required params: connection_request_id
+    - Optional params: reason
+
+11. **store_user_goal**
    - Use when: User shares what they want from the community (their objectives or needs)
    - Required params: goal
 
-5. **record_community_response**
-   - Use when: User is providing an answer to a community request you recently presented
-   - Required params: request_id, response_content
-   - Only use if they're providing substantive information (not just "I don't know")
+12. **record_community_response**
+    - Use when: User is providing an answer to a community request you recently presented
+    - Required params: request_id, response_content
+    - Only use if they're providing substantive information (not just "I don't know")
+
+## CRITICAL: Introduction Flow Disambiguation
+
+There are THREE different introduction flows. Choose the correct tool based on the situation:
+
+**1. intro_opportunities (System-initiated, connector makes intro)**
+- **Situation**: Account Manager identified a match and presented it to connector
+- **User sees**: "Want to intro [Prospect Name] to [Innovator Name]? Worth 25 credits."
+- **User actions**: Accept (accept_intro_opportunity) or Decline (decline_intro_opportunity)
+- **Flow**: System asks connector → Connector agrees → System coordinates intro
+
+**2. intro_offers (User-initiated, connector offers intro)**
+- **Situation**: User spontaneously offers to introduce someone
+- **User says**: "I can introduce you to [Name]" or "Want me to connect you with [Name]?"
+- **Tool to use**: offer_introduction
+- **Flow**: User offers intro → Introducee accepts/declines → Connector confirms completion
+- **User actions as connector**: offer_introduction, confirm_intro_offer
+- **User actions as introducee**: accept_intro_offer, decline_intro_offer
+
+**3. connection_requests (Requestor asks introducee)**
+- **Situation**: Someone wants to be introduced to this user
+- **User sees**: "[Name] wants an intro to you. Context: [reason]"
+- **User actions**: Accept (accept_connection_request) or Decline (decline_connection_request)
+- **Flow**: Requestor asks → Introducee agrees/declines → System coordinates intro
+
+**How to Disambiguate:**
+
+If user says "I want to meet [Person]" or "Can you connect me with [Person]?":
+→ This is NOT any of the above flows
+→ Use publish_community_request to find someone who can make that intro
+→ DO NOT use offer_introduction (user is not offering, they're requesting)
+
+If user says "I can introduce you to [Person]":
+→ Use offer_introduction (user is OFFERING to be the connector)
+
+If user is responding to a priority about an intro opportunity:
+→ Use accept_intro_opportunity or decline_intro_opportunity
+
+If user is responding to an intro offer (someone offered to introduce them):
+→ Use accept_intro_offer or decline_intro_offer
+
+If user is responding to a connection request (someone wants intro to them):
+→ Use accept_connection_request or decline_connection_request
 
 ## Decision Process
 
@@ -394,9 +490,27 @@ export async function callReengagementDecision(
 
   // Parse JSON response
   const cleanedText = textBlock.text.trim().replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
-  const decision: ReengagementDecisionOutput = JSON.parse(cleanedText);
 
-  return decision;
+  try {
+    const decision: ReengagementDecisionOutput = JSON.parse(cleanedText);
+    return decision;
+  } catch (error) {
+    console.error('[Concierge Re-engagement Call 1] Failed to parse JSON:', error);
+    console.error('[Concierge Re-engagement Call 1] Raw response:', cleanedText);
+
+    // Fallback: Don't message, extend task by 7 days
+    return {
+      should_message: false,
+      reasoning: 'Error parsing re-engagement decision - extending task',
+      extend_days: 7,
+      tools_to_execute: [],
+      next_scenario: 'no_message',
+      context_for_call_2: {
+        primary_topic: 're-engagement decision error',
+        tone: 'helpful'
+      }
+    };
+  }
 }
 
 /**

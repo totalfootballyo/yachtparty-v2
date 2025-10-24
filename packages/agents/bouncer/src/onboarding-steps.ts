@@ -8,6 +8,7 @@
  */
 
 import { createServiceClient, publishEvent, createAgentTask, upgradeProspectsToUser, shouldTriggerProspectUpgrade, markProspectUpgradeChecked } from '@yachtparty/shared';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { User, Conversation } from '@yachtparty/shared';
 import dotenv from 'dotenv';
 
@@ -113,13 +114,15 @@ export interface ReferralMatch {
  *
  * @param providedName - Name string provided by user (e.g., "Ben Trenda" or "Sarah Chen")
  * @param company - Optional company name to narrow search
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns Array of potential matches sorted by relevance score
  */
 export async function lookupUserByName(
   providedName: string,
-  company?: string
+  company?: string,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<ReferralMatch[]> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   // Parse name into first and last name
   const nameParts = providedName.trim().split(/\s+/);
@@ -195,13 +198,15 @@ export async function lookupUserByName(
  *
  * @param userId - User ID to update
  * @param extractedFields - Fields extracted from user's message
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns Array of field names that were updated
  */
 export async function collectUserInfo(
   userId: string,
-  extractedFields: Record<string, any>
+  extractedFields: Record<string, any>,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<string[]> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
   const updatedFields: string[] = [];
   const updates: Partial<User> = {};
 
@@ -271,7 +276,7 @@ export async function collectUserInfo(
           value: updates[field as keyof typeof updates]
         },
         created_by: 'bouncer_agent'
-      });
+      }, dbClient);
     }
   }
 
@@ -303,7 +308,8 @@ export function generateVerificationEmail(userId: string): string {
  */
 export async function checkLinkedInConnection(
   userId: string,
-  userLinkedInUrl: string
+  userLinkedInUrl: string,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<string> {
   // Create task for Social Butterfly Agent
   const task = await createAgentTask({
@@ -319,7 +325,7 @@ export async function checkLinkedInConnection(
       founder_linkedin_url: process.env.FOUNDER_LINKEDIN_URL || 'https://linkedin.com/in/founder'
     },
     created_by: 'bouncer_agent'
-  });
+  }, dbClient);
 
   // Publish event
   await publishEvent({
@@ -332,30 +338,33 @@ export async function checkLinkedInConnection(
       task_id: task.id
     },
     created_by: 'bouncer_agent'
-  });
+  }, dbClient);
 
   return task.id;
 }
 
 /**
- * Completes user onboarding.
+ * Marks onboarding information as complete (all fields collected + email verified).
  *
- * Sets user.verified = true, changes poc_agent_type to 'concierge',
- * and publishes completion event.
+ * NOTE: This does NOT set user.verified = true or change poc_agent_type.
+ * Those changes happen through manual approval process or quality filter.
  *
  * @param userId - User ID to complete onboarding for
  * @returns Updated user record
  */
-export async function completeOnboarding(userId: string): Promise<User> {
-  const supabase = createServiceClient();
+export async function completeOnboarding(
+  userId: string,
+  dbClient: SupabaseClient = createServiceClient()
+): Promise<User> {
+  const supabase = dbClient;
 
-  // Update user record
+  // Update user record - just mark onboarding info as complete
+  // Do NOT set verified = true or change poc_agent_type yet
   const { data: user, error } = await supabase
     .from('users')
     .update({
-      verified: true,
-      poc_agent_type: 'concierge',
       updated_at: new Date()
+      // NOTE: verified and poc_agent_type are set through manual approval process
     })
     .eq('id', userId)
     .select()
@@ -365,28 +374,28 @@ export async function completeOnboarding(userId: string): Promise<User> {
     throw new Error(`Failed to complete onboarding for user ${userId}: ${error.message}`);
   }
 
-  // Publish verification event
+  // Publish onboarding completion event (not verification event)
   await publishEvent({
-    event_type: 'user.verified',
+    event_type: 'user.onboarding_info_complete',
     aggregate_id: userId,
     aggregate_type: 'user',
     payload: {
-      verified_at: new Date().toISOString(),
-      onboarding_completed: true
+      onboarding_completed_at: new Date().toISOString(),
+      ready_for_manual_approval: true
     },
     created_by: 'bouncer_agent'
-  });
+  }, dbClient);
 
   // Check if we should upgrade any matching prospects
   try {
-    const shouldUpgrade = await shouldTriggerProspectUpgrade(userId);
+    const shouldUpgrade = await shouldTriggerProspectUpgrade(userId, dbClient);
 
     if (shouldUpgrade) {
       // Trigger prospect upgrade (auto-create intro opportunities)
-      const upgradeResult = await upgradeProspectsToUser(userId);
+      const upgradeResult = await upgradeProspectsToUser(userId, dbClient);
 
       // Mark as checked (prevent duplicate processing)
-      await markProspectUpgradeChecked(userId);
+      await markProspectUpgradeChecked(userId, dbClient);
 
       // Log the results
       if (upgradeResult.success && upgradeResult.prospectsMatched > 0) {
@@ -403,7 +412,7 @@ export async function completeOnboarding(userId: string): Promise<User> {
             credits_awarded: upgradeResult.creditEventsCreated
           },
           created_by: 'bouncer_agent'
-        });
+        }, dbClient);
       }
     }
   } catch (error: any) {
@@ -429,9 +438,10 @@ export async function createReengagementTask(
   userId: string,
   conversationId: string,
   currentStep: OnboardingStep,
-  missingFields: string[]
+  missingFields: string[],
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<string> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   // First, cancel any existing pending re-engagement tasks for this user
   await supabase
@@ -459,7 +469,7 @@ export async function createReengagementTask(
       attemptCount: 1 // Start at 1, will be incremented by task processor
     },
     created_by: 'bouncer_agent'
-  });
+  }, dbClient);
 
   return task.id;
 }
@@ -471,6 +481,7 @@ export async function createReengagementTask(
  *
  * @param userId - User ID who made the nomination
  * @param nomination - Nomination details
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns Intro opportunity ID
  */
 export async function storeNomination(
@@ -480,9 +491,10 @@ export async function storeNomination(
     company?: string;
     title?: string;
     linkedin_url?: string;
-  }
+  },
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<string> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   // Create prospect record (if not exists) - for LinkedIn research
   const { data: prospect, error: prospectError } = await supabase
@@ -543,7 +555,7 @@ export async function storeNomination(
       nominated_during_onboarding: true
     },
     created_by: 'bouncer_agent'
-  });
+  }, dbClient);
 
   return introOpportunity.id;
 }

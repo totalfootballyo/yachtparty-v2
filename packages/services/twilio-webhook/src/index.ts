@@ -1094,7 +1094,7 @@ app.post('/verify-email', express.json(), async (req: Request, res: Response) =>
       console.error(`⚠️  Error finding conversation for user ${userId}:`, convError);
     }
 
-    // Directly invoke Bouncer to acknowledge email verification
+    // Invoke Bouncer agent to acknowledge email verification
     if (conversation) {
       // Refresh user record with email_verified = true
       const { data: updatedUser } = await supabase
@@ -1104,47 +1104,78 @@ app.post('/verify-email', express.json(), async (req: Request, res: Response) =>
         .single();
 
       if (updatedUser) {
-        // Create a system message to trigger email verified acknowledgment
-        const systemMessage: Message = {
-          id: crypto.randomUUID(),
-          conversation_id: conversation.id,
-          user_id: userId,
-          role: 'system',
-          content: 'email_verified_acknowledgment',
-          direction: 'inbound',
-          twilio_message_sid: null,
-          status: null,
-          created_at: new Date(),
-          sent_at: null,
-          delivered_at: null
-        };
+        console.log(`🚪 Invoking Bouncer to acknowledge email verification for user ${userId}`);
 
-        try {
-          console.log(`📲 Invoking Bouncer for email verification acknowledgment`);
-          const bouncerResponse = await invokeBouncerPackageAgent(
-            systemMessage,
-            updatedUser as User,
-            conversation as Conversation
-          );
+        // Record system message in database to trigger Bouncer
+        const { data: systemMessage, error: msgError } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversation.id,
+            user_id: userId,
+            role: 'system',
+            content: 'email_verified_acknowledgment',
+            direction: 'inbound',
+            status: 'delivered'
+          })
+          .select()
+          .single();
 
-          // If Bouncer wants to send a message, insert it
-          if (bouncerResponse.immediateReply && bouncerResponse.message) {
+        if (msgError || !systemMessage) {
+          console.error(`❌ Error creating system message for email verification:`, msgError);
+          throw new Error(`Failed to create system message: ${msgError?.message}`);
+        }
+
+        console.log(`📝 System message created: ${systemMessage.id}`);
+
+        // Invoke Bouncer agent to handle the email verification acknowledgment
+        const response = await invokeBouncerPackageAgent(
+          systemMessage as Message,
+          updatedUser as User,
+          conversation as Conversation
+        );
+
+        console.log(`🚪 Bouncer agent responded to email verification`);
+
+        // Handle Bouncer's response (immediate reply, actions, events)
+        if (response.immediateReply) {
+          const messagesToSend = response.messages || (response.message ? [response.message] : []);
+
+          for (const messageContent of messagesToSend) {
             await supabase.from('messages').insert({
               conversation_id: conversation.id,
               user_id: userId,
               role: 'bouncer',
-              content: bouncerResponse.message,
+              content: messageContent,
               direction: 'outbound',
-              status: 'pending', // SMS sender will pick this up
+              status: 'pending'
             });
-            console.log(`✅ Bouncer acknowledgment message queued for user ${userId}`);
           }
-        } catch (error) {
-          console.error(`⚠️  Error invoking Bouncer for user ${userId}:`, error);
+          console.log(`✅ Bouncer acknowledgment queued (${messagesToSend.length} message${messagesToSend.length === 1 ? '' : 's'})`);
+        }
+
+        // Execute any actions returned by Bouncer
+        if (response.actions && response.actions.length > 0) {
+          for (const action of response.actions) {
+            await executeAction(action, userId, conversation.id);
+          }
+        }
+
+        // Publish any events returned by Bouncer
+        if (response.events && response.events.length > 0) {
+          for (const event of response.events) {
+            await supabase.from('events').insert({
+              event_type: event.event_type,
+              aggregate_id: event.aggregate_id,
+              aggregate_type: event.aggregate_type,
+              payload: event.payload,
+              metadata: event.metadata,
+              created_by: event.created_by,
+            });
+          }
         }
       }
     } else {
-      console.log(`ℹ️  No active conversation found for user ${userId}, skipping Bouncer acknowledgment`);
+      console.log(`ℹ️  No active conversation found for user ${userId}, skipping Bouncer invocation`);
     }
 
     // Respond to email webhook

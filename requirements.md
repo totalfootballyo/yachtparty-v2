@@ -842,48 +842,243 @@ CREATE TABLE solution_workflows (
 
 #### `intro_opportunities`
 
-Connection opportunities for users to make introductions.
+**IMPORTANT: This is NOT for users requesting to be introduced. This is for connectors making intros TO someone else.**
+
+Opportunities for existing users (connectors) to make warm introductions between:
+- A prospect they know off-platform (prospect_name/prospect_company)
+- An innovator on the platform (innovator_id/innovator_name)
+
+**How they're created:**
+- Innovators upload prospect lists
+- We match prospects to users' LinkedIn connections (future: Social Butterfly agent)
+- Users with connections to prospects receive intro_opportunities
+- Multiple connectors can have opportunities for same prospect
+
+**Lifecycle:**
+- `open` - Presented to connector, awaiting response
+- `accepted` - Connector agreed to make intro
+- `rejected`/`declined` - Connector passed on opportunity
+- `paused` - Another connector accepted intro for this prospect (temporarily paused)
+- `completed` - Intro was successfully made and confirmed
+- `cancelled` - Another connector completed intro for this prospect (permanently closed)
+
+**Messaging example:**
+"Hey Ben, I think you might know Tony Katsur at IAB. If so, Rob Sopkic from MediaMath is trying to get connected with him. A few members have vouched for Rob, so we think it might be worth a conversation for Tony. If you know him and are open to making the intro, we'll make sure you get taken care of too. No pressure obviously, lmk if I should take this off my list of things I'm watching for you."
 
 ```sql
 CREATE TABLE intro_opportunities (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  
+
   -- Parties involved
   connector_user_id UUID REFERENCES users(id) NOT NULL, -- User who can make intro
-  innovator_id UUID REFERENCES users(id), -- If innovator is on platform
-  prospect_id UUID REFERENCES prospects(id), -- If prospect not yet on platform
-  
+  innovator_id UUID REFERENCES users(id), -- Innovator seeking connection
+  prospect_id UUID REFERENCES prospects(id), -- Person connector knows
+
   -- Opportunity details
-  prospect_name VARCHAR(255) NOT NULL,
+  prospect_name VARCHAR(255) NOT NULL, -- Person connector might know
   prospect_company VARCHAR(255),
   prospect_title VARCHAR(255),
   prospect_linkedin_url VARCHAR(500),
-  innovator_name VARCHAR(255),
-  
+  innovator_name VARCHAR(255), -- Person seeking intro
+  intro_context TEXT, -- Why this intro makes sense
+
   -- Incentive
   bounty_credits INTEGER DEFAULT 50,
-  
+
   -- Status tracking
-  status VARCHAR(50) DEFAULT 'open', -- 'open', 'pending', 'accepted', 'rejected', 'completed', 'removed'
+  status VARCHAR(50) DEFAULT 'open', -- 'open', 'accepted', 'rejected', 'paused', 'completed', 'cancelled'
   connector_response TEXT, -- User's feedback
-  
+
   -- Feed reference (if presented via feed)
   feed_item_id UUID,
-  
+
   -- Intro details (if accepted)
   intro_email VARCHAR(255), -- Generated unique email for confirmation
   intro_scheduled_at TIMESTAMPTZ,
   intro_completed_at TIMESTAMPTZ,
-  
+
   -- Metadata
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
   expires_at TIMESTAMPTZ,
-  
+
   -- Indexes
   INDEX idx_intros_connector (connector_user_id, status),
   INDEX idx_intros_innovator (innovator_id, status),
+  INDEX idx_intros_prospect (prospect_id, status),
   INDEX idx_intros_status (status, created_at DESC)
+);
+```
+
+
+#### `intro_offers`
+
+**IMPORTANT: This is for user-initiated offers. User spontaneously says "I can introduce you to X".**
+
+Tracks when a user proactively offers to make an introduction (not system-prompted).
+
+**How they're created:**
+- User responds to community request: "I know someone who can help with that"
+- User responds to connection request: "I'm not the right person but I can intro you to Jim James who leads marketing"
+- User spontaneously offers in conversation: "I can connect you with Sarah at Hulu"
+
+**Parties:**
+- `offering_user_id` - User making the offer (connector, on platform)
+- `introducee_user_id` - User who would receive the intro (on platform, could be innovator)
+- `prospect_name` - Person being offered for intro (usually off-platform)
+- `context_type` - What triggered the offer: 'community_request', 'connection_request', 'spontaneous'
+- `context_id` - Reference to community_request or connection_request if applicable
+
+**Lifecycle:**
+1. User offers intro → `intro_offers` record created with status 'pending_introducee_response'
+2. Introducee user receives message → "Ben offered to introduce you to Jim James at ABC Corp..."
+3. Introducee accepts → status 'pending_connector_confirmation' + bounty_credits set
+4. Connector confirms details → status 'confirmed'
+5. Intro facilitated → status 'completed'
+
+**Bounty logic:**
+- NOT set when offer is created (offering user doesn't set this)
+- Set when introducee accepts (status → 'pending_connector_confirmation')
+- If introducee is innovator → bounty = innovator's `warm_intro_bounty` value
+- If introducee is not innovator → default to 0 (future logic TBD)
+
+**Messaging examples:**
+
+To introducee (innovator/requestor):
+```
+"Ben mentioned he might be able to connect you with Jim James who leads marketing at ABC Corp.
+He thinks Jim could help with the CTV attribution question you asked about.
+Want me to follow up with Ben and see if he can make that intro?"
+```
+
+To connector (for confirmation):
+```
+"Thanks for offering to intro Rob to Jim James. Rob is interested.
+Before I facilitate, can you confirm Jim would be open to this?
+Specifically, Rob is looking to discuss CTV attribution strategies."
+```
+
+**Status flow:**
+- `pending_introducee_response` - Waiting for introducee to accept/decline offer
+- `introducee_declined` - Introducee passed on the intro
+- `pending_connector_confirmation` - Introducee accepted, bounty set, waiting for connector to confirm
+- `connector_declined` - Connector can't make intro after all
+- `confirmed` - Both parties agreed, intro being facilitated
+- `completed` - Intro was made
+- `expired` - No response within timeframe
+
+```sql
+CREATE TABLE intro_offers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Parties involved
+  offering_user_id UUID REFERENCES users(id) NOT NULL, -- User offering to make intro (connector)
+  introducee_user_id UUID REFERENCES users(id) NOT NULL, -- User receiving intro (innovator/requestor)
+  prospect_name VARCHAR(255) NOT NULL, -- Person being offered for intro
+  prospect_company VARCHAR(255),
+  prospect_title VARCHAR(255),
+  prospect_context TEXT, -- Why offering user thinks this intro makes sense
+
+  -- Context
+  context_type VARCHAR(50) NOT NULL, -- 'community_request', 'connection_request', 'spontaneous'
+  context_id UUID, -- Reference to triggering request if applicable
+
+  -- Status tracking
+  status VARCHAR(50) DEFAULT 'pending_introducee_response',
+  introducee_response TEXT,
+  connector_confirmation TEXT,
+
+  -- Credits/incentives
+  bounty_credits INTEGER DEFAULT 0, -- Set when introducee accepts (NOT by offering user)
+
+  -- Intro details (if confirmed)
+  intro_email VARCHAR(255),
+  intro_completed_at TIMESTAMPTZ,
+
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ DEFAULT now() + INTERVAL '14 days',
+
+  -- Indexes
+  INDEX idx_intro_offers_offering_user (offering_user_id, status),
+  INDEX idx_intro_offers_introducee_user (introducee_user_id, status),
+  INDEX idx_intro_offers_context (context_type, context_id),
+  INDEX idx_intro_offers_status (status, created_at DESC)
+);
+```
+
+**IMPORTANT:** `bounty_credits` logic:
+- When intro_offer is created → `bounty_credits = 0` (default)
+- When introducee accepts → Query innovators table for introducee's `warm_intro_bounty`
+- If introducee is innovator → Set `bounty_credits = warm_intro_bounty`
+- If introducee is NOT innovator → Keep `bounty_credits = 0` (future logic TBD)
+- Status changes to 'pending_connector_confirmation'
+
+
+#### `connection_requests`
+
+**IMPORTANT: This is the inverse of intro_opportunities. This is for users RECEIVING introduction requests.**
+
+Opportunities for existing users to be introduced to someone who wants to meet them.
+
+**How they're created:**
+- Innovators upload prospect lists → prospect gets upgraded to user → connection_requests created
+- Innovators request intros to existing users directly (future)
+- Regular users can request connections (may require credit spend - TBD)
+
+**Lifecycle:**
+- `open` - Presented to introducee user, awaiting response
+- `accepted` - User agreed to the introduction
+- `rejected`/`declined` - User passed on the opportunity
+- `completed` - Introduction was made and confirmed
+- `expired` - Request expired without response
+
+**Messaging example:**
+"Hey Ben, Rob Sopkic from MediaMath was hoping to connect with you. Several people here have vouched for him, so I thought it was worth asking you. Specifically, he's looking to discuss CTV advertising strategies and thought your experience at IAB would be valuable. Any interest? I can share details if you need more info or have specific questions."
+
+```sql
+CREATE TABLE connection_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Parties involved
+  introducee_user_id UUID REFERENCES users(id) NOT NULL, -- User being asked if they want intro
+  requestor_user_id UUID REFERENCES users(id), -- Person seeking the intro (if on platform)
+  requestor_prospect_id UUID REFERENCES prospects(id), -- Person seeking intro (if not yet user)
+
+  -- Request details
+  requestor_name VARCHAR(255) NOT NULL,
+  requestor_company VARCHAR(255),
+  requestor_title VARCHAR(255),
+  requestor_linkedin_url VARCHAR(500),
+  intro_context TEXT NOT NULL, -- Why they want to connect
+  vouched_by_user_ids UUID[], -- Users who vouched for requestor
+
+  -- Incentive (if applicable)
+  bounty_credits INTEGER DEFAULT 0, -- Credits introducee earns if they accept (may be subsidized)
+  requestor_credits_spent INTEGER DEFAULT 0, -- Credits requestor spent to request intro
+
+  -- Status tracking
+  status VARCHAR(50) DEFAULT 'open', -- 'open', 'accepted', 'rejected', 'completed', 'expired'
+  introducee_response TEXT, -- User's feedback
+
+  -- Feed reference (if presented via feed)
+  feed_item_id UUID,
+
+  -- Intro details (if accepted)
+  intro_email VARCHAR(255), -- Generated unique email for confirmation
+  intro_completed_at TIMESTAMPTZ,
+
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ DEFAULT now() + INTERVAL '30 days',
+
+  -- Indexes
+  INDEX idx_connection_requests_introducee (introducee_user_id, status),
+  INDEX idx_connection_requests_requestor_user (requestor_user_id, status),
+  INDEX idx_connection_requests_requestor_prospect (requestor_prospect_id, status),
+  INDEX idx_connection_requests_status (status, created_at DESC)
 );
 ```
 
@@ -1198,13 +1393,18 @@ CREATE TABLE innovators (
   -- Status
   credits_balance INTEGER DEFAULT 0, -- Separate from user credits
   active BOOLEAN DEFAULT TRUE,
-  
+
+  -- Incentives
+  warm_intro_bounty INTEGER DEFAULT 25, -- Credits offered for warm intros to this innovator
+
   created_at TIMESTAMPTZ DEFAULT now(),
-  
+
   INDEX idx_innovators_categories USING GIN (categories),
   INDEX idx_innovators_active (active, created_at DESC)
 );
 ```
+
+**Note:** `warm_intro_bounty` is used when someone offers to introduce a prospect to this innovator via `intro_offers`. When the innovator accepts the offer, `bounty_credits` in the `intro_offers` record is set to this value.
 
 
 #### `agent_actions_log`
@@ -1397,6 +1597,43 @@ When a message arrives from a known phone number but conversation context seems 
 ### 4.2.1 Two-LLM Architecture Pattern
 
 **Critical Design Evolution:** After discovering that single-LLM tool calling consistently suppressed personality (LLM would use tools but provide no text response), we evolved to a **2-LLM sequential architecture** that strictly separates decision-making from personality expression.
+
+#### Architectural Rationale: Why Not Code-Based Parsing?
+
+**Historical Context:** Early iterations attempted to use code-based string parsing and rule-based logic to interpret user intent and make decisions about which tools to call. This approach failed for two key reasons:
+
+1. **Code Misinterprets User Intent**: Real user communication is messy—ambiguous phrasing, typos, partial information, implied context. Code-based parsing consistently misread user intent, requiring extensive edge-case handling that still missed nuanced cases.
+
+2. **Future Complexity Demands Intelligence**: While Bouncer has a relatively straightforward job (collect information in order, answer basic questions), Concierge and Innovator face exponentially more complexity:
+   - Users may have multiple competing priorities (open community requests, pending connections, active goals)
+   - Messages may be triggered by various sources (inbound user message, outbound re-engagement task, request from another user)
+   - Decisions require judgment: Should we message this user now? Do we address multiple items or focus on one? Do we reassure about a pending request while introducing a new opportunity?
+   - Account Manager maintains priority intelligence, but conversation-level agents must apply social judgment about *when* and *how* to communicate
+
+**Low-temperature LLMs (temp 0.1-0.6) demonstrate superior performance at these judgment calls compared to rule-based code.**
+
+#### Conceptual Model: 3-Part System
+
+While implemented as "2-LLM calls," the architecture conceptually represents a **3-part system**:
+
+1. **State** (Database + Context Loading)
+   - User record, conversation history, priorities, open requests
+   - Deterministic, code-based, provides ground truth
+
+2. **Decision** (Call 1: LLM with Structured Output)
+   - Interpret user intent from messy input
+   - Extract structured data (name, company, questions asked)
+   - Apply business logic and social judgment
+   - Select tools to execute and determine next scenario
+   - Output: Structured JSON, NO prose
+
+3. **Language Crafting** (Call 2: LLM with Personality Constraints)
+   - Receive structured context from State + Decision layers
+   - Generate natural language response matching agent personality
+   - Handle tone, brevity, acknowledgments, multi-message sequences
+   - Output: Prose ONLY, NO decisions or tool calls
+
+**This separation prevents conflicting instructions** (e.g., "be brief" vs. "extract all this data" vs. "sound like a bouncer") and ensures each LLM call has a singular, well-defined job.
 
 #### Architecture Overview
 
@@ -1716,9 +1953,11 @@ POC agents use Claude's tool calling to handle user interactions. Each tool has 
 - **How it works:** Creates a unique email address `verify-{userId}@verify.yachtparty.xyz`. User sends email from their work email to this address, which triggers webhook verification. Returns action for frontend to display the email address.
 
 **Tool: `complete_onboarding`**
-- **Purpose:** Mark user as verified and complete onboarding process
+- **Purpose:** Mark that all onboarding information has been collected and email verified (ready for manual approval)
 - **Parameters:** None
-- **How it works:** Sets `user.verified = true`, changes `user.poc_agent_type` to 'concierge', publishes `user.verified` event. Only called after email verification and all required info collected.
+- **How it works:** Publishes `user.onboarding_info_complete` event. Does NOT set `user.verified = true` or change `user.poc_agent_type` - these happen through manual approval process.
+- **When called:** After all required fields collected (first_name, last_name, company, title) AND `email_verified = true`
+- **Next step:** Manual review/quality filter (not yet implemented) will set verified=true and change poc_agent_type
 
 #### **Concierge Tools** (5 tools)
 
@@ -1807,17 +2046,19 @@ Innovator agent has access to all Concierge tools PLUS these additional tools:
     - Track referral source (first question: "who told you about this?")
     - Collect: first_name, last_name, company, title
     - Request email verification (user emails support with a custom generated email address that hits a webhook)
-  
+
 2. **Referral tracking**: When user provides referrer name, lookup existing users and match using LLM confirmation. Store in `referred_by` (UUID) if matched, or `name_dropped` (text) if not found.
 3. // removed LinkedIn collection in onboarding for now. we may add this back if we can make it seamless for the user (ideally we find their profile in an asyc process and ask them, is this you?)
 4. Create re-engagement tasks if user goes inactive
-5. On completion: Set `user.verified = true`, change `poc_agent_type` to 'concierge'
+5. **On onboarding info complete:** Mark that all required information has been collected and email verified. Publishes `user.onboarding_info_complete` event for manual review/approval.
+6. **Manual Approval Required:** System does NOT automatically set `verified = true` or change `poc_agent_type` - these changes happen through manual approval process (quality filter not yet implemented)
 
 **Events Published:**
 
-- `user.onboarding_step.completed`
-- `user.verification.pending`
-- `user.verified` (final event when complete)
+- `user.onboarding_step.completed` - Each time a field is collected (name, company, etc.)
+- `user.verification.pending` - When email verification is requested
+- `user.onboarding_info_complete` - **NEW:** When all required info collected + email verified, ready for manual approval
+- ~~`user.verified`~~ - **REMOVED:** No longer published by Bouncer (manual approval process publishes this)
 
 **Tasks Created:**
 
@@ -1828,7 +2069,7 @@ Innovator agent has access to all Concierge tools PLUS these additional tools:
 See section 4.3 for complete tool documentation. Bouncer has access to:
 - `collect_user_info` - Store user information fields during onboarding
 - `send_verification_email` - Generate unique verification email address
-- `complete_onboarding` - Mark user as verified and transition to Concierge
+- `complete_onboarding` - **UPDATED:** Mark onboarding info as complete (does NOT set verified=true or change poc_agent_type)
 
 **Re-engagement with LLM Judgment:**
 
@@ -1856,11 +2097,52 @@ Implementation: `packages/agents/bouncer/src/index.ts` (handleReengagement, buil
 **State Tracking:**
 Uses `user` record fields:
 
-- `verified` = overall status
+- `verified` = overall status (set through manual approval, NOT by Bouncer)
+- `email_verified` = whether user sent verification email (separate from full verification)
 - `email`, `first_name`, `last_name`, `company`, `title` = collected data
 - `referred_by` = UUID of referring user (if matched to existing user)
 - `name_dropped` = Raw referrer name text (if not matched)
 - Messages in conversation show progress
+
+**Email Verification Flow:**
+
+The Bouncer implements a two-stage verification process:
+
+1. **Email Collection & Verification Request**
+   - LLM calls `send_verification_email` tool
+   - System generates unique address: `verify-{userId}@verify.yachtparty.xyz`
+   - Agent tells user to send email from work address to this unique address
+   - Important: Agent does NOT store user's email when they mention it in conversation
+
+2. **Email Webhook Receipt**
+   - User sends email from work address (e.g., `eddie@company.com`)
+   - Email webhook receives it, extracts sender's email
+   - Sets `user.email = sender@company.com` and `user.email_verified = true`
+   - Creates system message with `content = 'email_verified_acknowledgment'`
+
+3. **System Message Processing** (**October 23, 2025 Fix**)
+   - Bouncer receives system message
+   - **NEW BEHAVIOR:** Routes to normal 2-LLM decision flow (not special handler)
+   - Call 1 (Decision): LLM checks if all fields complete + email_verified = true
+   - If complete: LLM calls `complete_onboarding` tool
+   - If incomplete: LLM asks for missing fields
+   - Call 2 (Personality): Agent acknowledges email receipt: "Got your email, thanks. Team will review everything and get back to you."
+
+4. **Onboarding Complete Event**
+   - `complete_onboarding` tool publishes `user.onboarding_info_complete` event
+   - Does NOT set `verified = true` or change `poc_agent_type`
+   - User enters manual approval queue
+
+5. **Manual Approval** (not yet implemented)
+   - Quality filter reviews user info
+   - Sets `verified = true` and changes `poc_agent_type` when approved
+   - Publishes `user.verified` event
+
+**Why Two-Stage Verification:**
+- `email_verified` proves work email ownership
+- `verified` indicates full manual approval/quality check
+- This prevents auto-verification before quality review
+- Enables testing Concierge separately before exposing to all verified users
 
 **Personality & Positioning:**
 
@@ -2098,8 +2380,10 @@ Before I dig deeper, what's your budget range for this? That'll help me narrow t
 
 1. **Process events since last run** - fetch all user-related events
 2. **Update user_priorities table** - calculate value scores, rank items
-3. **Publish priority update events** - Concierge subscribes and decides when/how to notify
-4. **Manage saga lifecycles** - check on pending solution workflows, intro processes
+3. **Prioritize introduction flows** - load and score intro_opportunities, connection_requests, intro_offers
+4. **Publish priority update events** - Concierge subscribes and decides when/how to notify
+5. **Manage saga lifecycles** - check on pending solution workflows, intro processes
+6. **Handle state transitions** - pause/cancel competing intro opportunities
 
 **Processing Logic:**
 
@@ -2122,14 +2406,25 @@ async function processUserAccountManager(userId: string) {
     solutionUpdates: events.filter(e => e.event_type === 'solution.research_complete')
   };
 
-  // 3. Calculate priority scores using LLM
-  const priorityScores = await calculatePriorityScores(userId, categorized);
+  // 3. Calculate priority scores using LLM (for goals/challenges/opportunities)
+  const llmPriorityScores = await calculatePriorityScores(userId, categorized);
 
-  // 4. Update user_priorities table
-  await updateUserPriorities(userId, priorityScores);
+  // 4. Load and score intro flow items (ADDED October 2025)
+  const introFlowPriorities = [];
+  introFlowPriorities.push(...await loadIntroOpportunities(userId, supabase));
+  introFlowPriorities.push(...await loadConnectionRequests(userId, supabase));
+  introFlowPriorities.push(...await loadIntroOffers(userId, supabase));
 
-  // 5. Publish priority update event (Concierge decides when/how to notify)
-  const urgentItems = priorityScores.filter(item => item.score > 80);
+  // 5. Combine all priorities and sort by score
+  const allPriorities = [...llmPriorityScores, ...introFlowPriorities];
+  allPriorities.sort((a, b) => b.score - a.score);
+  const topPriorities = allPriorities.slice(0, 10); // Top 10
+
+  // 6. Update user_priorities table
+  await updateUserPriorities(userId, topPriorities);
+
+  // 7. Publish priority update event (Concierge decides when/how to notify)
+  const urgentItems = topPriorities.filter(item => item.score > 80);
   if (urgentItems.length > 0) {
     await publishEvent({
       eventType: 'priority.update',
@@ -2142,7 +2437,7 @@ async function processUserAccountManager(userId: string) {
     });
   }
 
-  // 6. Publish completion event
+  // 8. Publish completion event
   await publishEvent({
     eventType: 'account_manager.processing.completed',
     aggregateId: userId,
@@ -2170,6 +2465,10 @@ async function processUserAccountManager(userId: string) {
 - ✅ Publishes priority.update events for Concierge to consume
 - ✅ **Re-engagement with LLM Judgment**: Task-processor creates system message → Concierge receives it → LLM decides whether/what to say based on priorities, goals, and conversation history
 - ✅ Never directly messages users - always via Concierge with full context
+- ✅ **Intro Flow Prioritization (October 24, 2025)**: Loads and scores intro_opportunities, connection_requests, and intro_offers alongside LLM-based priorities
+- ✅ **State Transitions**: Automatically pauses competing intro opportunities when accepted, cancels when completed
+- ✅ **Dynamic Scoring**: Bounty credits, vouching, connection strength, recency all factor into priority scores
+- ✅ **Top 10 Priorities**: Increased from 5 to accommodate intro flow items in addition to goals/challenges
 
 #### **Solution Saga**
 
@@ -4692,6 +4991,156 @@ Bouncer: "I'm just the bouncer but here are the basics: Yachtparty helps you get
 
 ---
 
+### A.6 Email Verification 
+
+**Context:** During testing, we discovered the email verification flow was auto-verifying users and switching them to Concierge immediately, before we were ready to expose all users to Concierge. We needed separation between "email verified" and "fully approved."
+
+#### Problem: Auto-Verification Too Early
+
+**What was happening:**
+1. User sent verification email → `email_verified = true`
+2. Special handler sent "👍" acknowledgment (bypassing decision layer)
+3. Bouncer NEVER called `complete_onboarding` (no completion logic)
+4. When `complete_onboarding` WAS called: set `verified = true` and changed `poc_agent_type = 'concierge'`
+
+**Issues:**
+1. No quality filter before users became fully verified
+2. Immediate switch to Concierge (not ready for production)
+3. Email verification acknowledgment bypassed 2-LLM architecture
+4. No clear distinction between email verification and manual approval
+
+#### Solution: Two-Stage Verification
+
+**Architectural Changes (October 23, 2025):**
+
+1. **Email Verification ≠ Full Verification**
+   - `email_verified` = user sent email from work address
+   - `verified` = manual approval complete (quality filter passed)
+   - These are now separate concepts with separate workflows
+
+2. **Removed Special Email Handler**
+   - Email verification acknowledgment now goes through normal 2-LLM flow
+   - Decision layer checks if onboarding complete and calls `complete_onboarding`
+   - Personality layer sends proper acknowledgment message
+
+3. **`complete_onboarding` Tool Updated**
+   - **OLD:** Set `verified = true`, changed `poc_agent_type = 'concierge'`
+   - **NEW:** Publishes `user.onboarding_info_complete` event only
+   - Does NOT set `verified` or change `poc_agent_type`
+   - User enters manual approval queue
+
+4. **Manual Approval Process (Future)**
+   - Admin/quality filter reviews `onboarding_info_complete` events
+   - When approved: sets `verified = true`, changes `poc_agent_type`
+   - Publishes `user.verified` event
+   - Enables controlled rollout and quality filtering
+
+#### Why This Matters
+
+**Testing Isolation:**
+- Can test Bouncer thoroughly without exposing users to untested Concierge
+- Can roll out manual approval gradually
+- Clear separation of concerns
+
+**Quality Control:**
+- Not all email-verified users should be auto-approved
+- Enables screening, verification, quality checks
+- Future: automated quality filters, ML-based scoring
+
+**Production Safety:**
+- Don't want new users experiencing buggy Concierge
+- Manual approval gives us control over who gets full access
+- Can keep users with Bouncer until ready
+
+#### Key Learning
+
+**System message handling should default to normal agent flow unless there's a specific reason for special handling.**
+
+Initially we created special handlers for re-engagement and email verification. But email verification should use the normal decision flow because:
+1. LLM needs to decide what to do next (call complete_onboarding? ask for missing info?)
+2. Decision logic is complex and shouldn't be hardcoded
+3. Consistency with 2-LLM architecture
+
+**Updated Code Locations:**
+- `/packages/agents/bouncer/src/index.ts` - Email verification routing
+- `/packages/agents/bouncer/src/onboarding-steps.ts` - `completeOnboarding()` function
+- `/packages/agents/bouncer/src/decision.ts` - Email verification decision logic
+- `/packages/agents/bouncer/src/personality.ts` - Email verification response
+
+**Updated Requirements:** Section 4.2 - Bouncer Agent, Email Verification Flow subsection
+
+---
+
+### A.7 Database Client Parameterization for Testing (October 2025)
+
+**Context:** To enable comprehensive agent testing without polluting production data, all functions and agents must accept an optional Supabase client parameter.
+
+#### The Pattern
+
+**Every database function signature:**
+```typescript
+export async function someFunction(
+  param1: Type1,
+  param2: Type2,
+  dbClient: SupabaseClient = createServiceClient()  // ← Optional, defaults to production
+): Promise<ReturnType> {
+  const supabase = dbClient;  // Use provided client
+  // ... function implementation
+}
+```
+
+**Why This Matters:**
+
+1. **Testing Isolation:**
+   - Test framework creates test database client
+   - Passes it to agent invocations
+   - All data writes go to test database
+   - Zero risk of test data in production
+
+2. **Production Safety:**
+   - Default parameter = production client
+   - Production code doesn't need to pass dbClient
+   - Backward compatible with existing code
+
+3. **Agent Invocation:**
+   ```typescript
+   // Production
+   await invokeBouncerAgent(message, user, conversation)  // Uses prod DB
+
+   // Testing
+   const testDb = createTestDbClient()
+   await invokeBouncerAgent(message, user, conversation, testDb)  // Uses test DB
+   ```
+
+#### Implementation Checklist
+
+**Required for ALL functions that touch database:**
+
+✅ Agent entry points (`invokeBouncerAgent`, `invokeConciergeAgent`, etc.)
+✅ Tool execution functions (`collectUserInfo`, `completeOnboarding`, etc.)
+✅ Helper functions (`lookupUserByName`, `storeNomination`, etc.)
+✅ Event publishing (`publishEvent`)
+✅ Task creation (`createAgentTask`)
+
+**Files Updated:**
+- `/packages/agents/bouncer/src/index.ts` - All functions parameterized
+- `/packages/agents/bouncer/src/onboarding-steps.ts` - 6 functions parameterized
+- `/packages/agents/concierge/src/index.ts` - All functions parameterized
+- `/packages/shared/src/utils/events.ts` - publishEvent parameterized
+- `/packages/shared/src/utils/tasks.ts` - createAgentTask parameterized
+
+**Testing Framework Integration:**
+- `/Testing/framework/ConversationRunner.ts` - Creates test DB client, passes to all agent calls
+- `/packages/testing/src/helpers/db-utils.ts` - Test database client creation
+
+#### Key Learning
+
+**Parameterize database access from the start.** Adding it later requires touching every function, every agent, every helper. Build this pattern in from day one.
+
+**Default parameters are your friend** - They enable testability without breaking production code or requiring changes everywhere.
+
+---
+
 ### Appendix C: Integration & Deployment Learnings (October 2025)
 
 **Context:** During the parallel development and integration of Account Manager, Task Processor, Event Processor, and Message Orchestrator services (October 14-16, 2025), we encountered several critical insights about multi-agent system integration, Cloud Run deployment, and production readiness.
@@ -5395,6 +5844,94 @@ Based on October 2025 integration experience:
 ---
 
 ## 13. Deployment History & Learnings
+
+### October 21, 2025 - Introduction Flows Event Handlers (COMPLETED) ✅
+
+**Services Updated:** event-processor, shared types
+**Status:** Phases 4-5 complete - Account Manager prioritization and Agent of Humans coordination fully implemented
+**Time Elapsed:** ~4 hours
+**Database Changes:** None (uses existing user_priorities, intro_offers, intro_opportunities tables)
+**Event Types Added:** 13 new event types
+
+#### What Was Implemented
+
+**Phase 4: Account Manager Prioritization (12 Event Handlers)**
+
+Created `/packages/services/event-processor/src/handlers/intro-priority-handlers.ts` with comprehensive event handling:
+
+1. ✅ `intro.opportunity_created` → Scores 25-50+ (+20 target company, +10 success rate, -10 recent declines)
+2. ✅ `connection.request_created` → Scores 60-95 (+10 per vouch, +10 rated innovator, +10 detailed context)
+3. ✅ `intro.offer_created` → Scores 70-95 (+15 reputation, +10 target company) + **innovator bounty logic**
+4. ✅ `intro.opportunity_accepted` → Marks actioned
+5. ✅ `intro.opportunity_declined` → Marks expired
+6. ✅ `intro.opportunity_cancelled` → Removes from priorities
+7. ✅ `connection.request_accepted` → Marks actioned
+8. ✅ `connection.request_declined` → Marks expired
+9. ✅ `intro.offer_accepted` → Two-step flow (moves to offering_user for confirmation)
+10. ✅ `intro.offer_declined` → Marks expired
+11. ✅ `intro.opportunity_completed` → Pauses similar + awards credits + close-loop
+12. ✅ `intro.offer_confirmed` → Awards credits + close-loop to both parties
+
+**Phase 5: Agent of Humans Coordination (5 Handlers)**
+
+Created `/packages/services/event-processor/src/handlers/intro-coordination-handlers.ts`:
+
+1. ✅ Credit awarding system with transaction logging
+2. ✅ Close-loop messaging to both connector and introducee
+3. ✅ 3-day confirmation reminders for pending intro_offers
+4. ✅ Innovator bounty queries (`warm_intro_bounty`) integrated into creation handler
+5. ✅ Connection request completion notifications
+
+#### Key Features Enabled
+
+- **Users see intro opportunities** in priorities (Account Manager surfaces them)
+- **Two-step acceptance** for intro_offers works end-to-end
+- **Automatic credit awards** when intros complete
+- **Close-loop feedback** messages to both parties
+- **Innovators get premium bounties** (`warm_intro_bounty`)
+- **Smart duplicate prevention** (pauses similar opportunities)
+- **Reminder system** for pending confirmations
+
+#### Architecture Decision: Comprehensive Handlers
+
+Some events use comprehensive handlers that manage BOTH priority updates AND coordination (credits/messages) to avoid duplicate registrations and ensure atomic operations:
+- `intro.opportunity_completed` → `handleIntroOpportunityCompletedCredits` (priorities + credits + messages)
+- `intro.offer_confirmed` → `handleIntroOfferCompleted` (priorities + credits + messages)
+
+This reduces handler count from 21 to 17 and prevents race conditions.
+
+#### Files Modified
+
+1. **Created:** `/packages/services/event-processor/src/handlers/intro-priority-handlers.ts` (650+ lines)
+2. **Created:** `/packages/services/event-processor/src/handlers/intro-coordination-handlers.ts` (400+ lines)
+3. **Modified:** `/packages/services/event-processor/src/registry.ts` (registered 17 handlers)
+4. **Modified:** `/packages/shared/src/types/events.ts` (13 new event types)
+
+#### Event Types Added
+
+```typescript
+// intro_opportunities
+'intro.opportunity_accepted' | 'intro.opportunity_declined' |
+'intro.opportunity_completed' | 'intro.opportunity_cancelled'
+
+// connection_requests
+'connection.request_created' | 'connection.request_accepted' |
+'connection.request_declined' | 'connection.request_completed'
+
+// intro_offers
+'intro.offer_created' | 'intro.offer_accepted' | 'intro.offer_declined' |
+'intro.offer_confirmed' | 'intro.offer_reminder'
+```
+
+#### Lessons Learned
+
+1. **Comprehensive handlers reduce complexity** - Combining priority updates with coordination prevents race conditions
+2. **Dynamic bounty requires DB queries** - Innovator bounty must be set at creation, not just acceptance
+3. **Two-step flows need state tracking** - `metadata.step` field clarifies which step we're at
+4. **Generous priority scoring** - 60-95 base scores ensure intros actually surface
+5. **Event naming matters** - `<entity>.<action>_<state>` pattern aids debugging
+
+---
 
 ### October 16, 2025 - Email Verification & Re-engagement Bug Fixes (COMPLETED)
 
@@ -6280,7 +6817,7 @@ The structured approach (Call 1 detects ambiguity → Call 2 presents options na
 
 ## 16. Concierge & Innovator 2-LLM Architecture Implementation Plan
 
-**Status:** Planning Phase - Not Yet Implemented
+**Status:** Likely complete - also reference appendix Z for additional work. 
 **Created:** October 20, 2025
 **Purpose:** Master reference for applying Bouncer's proven 2-LLM architecture to Concierge and Innovator agents
 
@@ -7201,24 +7738,74 @@ Prevent re-engagement spam:
 - If user hasn't responded to 3 re-engagements in 90 days → pause indefinitely
 - Account Manager can override for critical priorities (score >90)
 
-**Implementation:**
+**✅ IMPLEMENTED (October 24, 2025):**
+
+Throttling implemented in agent `handleReengagement()` functions (both Concierge and Innovator):
+- **Location:** `packages/agents/concierge/src/index.ts:333-456`
+- **Location:** `packages/agents/innovator/src/index.ts:298-421`
+
+**Check 1: 7-Day Throttle**
 ```typescript
-// In task-processor re-engagement handler
-// Check recent re-engagement attempts
-const { data: recentAttempts } = await supabase
+// At start of handleReengagement, BEFORE Step 1
+const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+const { data: recentAttempts } = await dbClient
   .from('agent_actions_log')
   .select('created_at')
-  .eq('user_id', task.user_id)
-  .eq('action_type', 're_engagement_check')
-  .gte('created_at', sevenDaysAgo)
-  .order('created_at', { ascending: false });
+  .eq('user_id', user.id)
+  .eq('action_type', 're_engagement_message_sent')  // Note: message_sent, not check
+  .gte('created_at', sevenDaysAgo.toISOString())
+  .order('created_at', { ascending: false })
+  .limit(1);
 
 if (recentAttempts && recentAttempts.length > 0) {
-  console.log(`[${task.id}] Throttling: User received re-engagement in last 7 days`);
-  // Extend task by 7 days
-  return { success: true, data: { throttled: true } };
+  const daysSinceLastAttempt = (Date.now() - new Date(recentAttempts[0].created_at).getTime()) / (1000 * 60 * 60 * 24);
+  const extendDays = Math.ceil(7 - daysSinceLastAttempt);
+
+  // Create new task scheduled for extendDays from now
+  // Log 're_engagement_throttled' action
+  // Return silent (no message)
 }
 ```
+
+**Check 2: 3-Strike Pause**
+```typescript
+// Check if user responded after each re-engagement attempt
+const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+const { data: allAttempts } = await dbClient
+  .from('agent_actions_log')
+  .select('created_at')
+  .eq('user_id', user.id)
+  .eq('action_type', 're_engagement_message_sent')
+  .gte('created_at', ninetyDaysAgo.toISOString());
+
+let unansweredCount = 0;
+for (const attempt of allAttempts) {
+  const { data: userResponses } = await dbClient
+    .from('messages')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('role', 'user')
+    .gte('created_at', attempt.created_at)
+    .limit(1);
+
+  if (!userResponses || userResponses.length === 0) {
+    unansweredCount++;
+  } else {
+    break; // User responded - reset counter
+  }
+}
+
+if (unansweredCount >= 3) {
+  // Log 're_engagement_paused' action
+  // DO NOT create new task (requires manual override)
+  // Return silent
+}
+```
+
+**Action Types Logged:**
+- `re_engagement_throttled` - When 7-day limit prevents messaging
+- `re_engagement_paused` - When 3 unanswered attempts triggers permanent pause
+- `re_engagement_message_sent` - When message successfully sent (used for throttling checks)
 
 ### 16.9 Potential Issues & Mitigations
 
@@ -7377,6 +7964,2776 @@ if (recentAttempts && recentAttempts.length > 0) {
 
 ---
 
+## Appendix B: Agent Testing Framework (E2E Tests)
+
+**Status:** Implemented
+**Created:** October 20, 2025
+**Purpose:** Comprehensive end-to-end testing infrastructure for all three agents (Concierge, Bouncer, Innovator) using real LLM calls with mocked database layer
+
+### B.1 Overview & Testing Philosophy
+
+**Testing Strategy:**
+- **Real LLM calls**: Tests make actual Anthropic API calls to validate 2-LLM architecture behavior
+- **Mocked database**: Supabase client mocked to provide deterministic test data
+- **E2E validation**: Tests cover full flow from incoming message → agent decision → tool execution → response generation
+
+**Why Real LLM Calls?**
+1. Validates actual prompt engineering and tool selection logic
+2. Catches prompt regressions and personality suppression issues
+3. Tests real-world ambiguity handling and decision-making
+4. Verifies message tone and quality that unit tests cannot assess
+5. Ensures tools are invoked correctly by LLM (not just by our code)
+
+**Why Mock Database?**
+1. Tests run without production database access
+2. Deterministic test scenarios (same input = same database state)
+3. Fast test execution (no network latency to database)
+4. Isolated test environments (no cross-test pollution)
+
+**Trade-offs:**
+- ✅ High confidence in actual behavior
+- ✅ Catches real prompt engineering issues
+- ✅ Tests human-facing output quality
+- ❌ Requires ANTHROPIC_API_KEY environment variable
+- ❌ ~30 second timeout per test (LLM API calls)
+- ❌ Tests consume API credits
+- ❌ Non-deterministic responses (LLM may vary slightly)
+
+### B.2 Test Suite Structure
+
+**Total Test Files: 10**
+
+#### B.2.1 Concierge Agent (5 test files)
+
+1. **`concierge.smoke.test.ts`** - Basic 2-LLM architecture validation
+   - User message happy path (tool selection + message composition)
+   - Tool parameter extraction accuracy
+   - Call 2 personality and tone validation
+   - Self-reflection capabilities (future)
+
+2. **`concierge.scenarios.test.ts`** - Comprehensive scenario coverage
+   - Intro opportunity handling (with actual priority data)
+   - Solution research requests
+   - Terse communication style matching
+   - Ambiguous intent detection + clarification requests
+   - Goal storage and acknowledgment
+
+3. **`concierge.multi-message.test.ts`** - Multi-message intelligence
+   - Typo corrections ("Bran" → "Brian")
+   - Unclear responses to options presented
+   - Multiple rapid messages requiring context
+   - Determining response vs. new topic
+
+4. **`concierge.reengagement.test.ts`** - Re-engagement decision logic
+   - High-value priority messaging decisions
+   - User frustration detection
+   - Task extension when not messaging
+   - Multi-threading scenarios
+
+5. **`concierge.edgecases.test.ts`** - Edge cases and error handling
+   - Very brief messages (single words)
+   - Very long multi-paragraph messages
+   - Mixed priority value scores
+   - Tone consistency across user styles
+
+#### B.2.2 Bouncer Agent (3 test files)
+
+1. **`bouncer.onboarding.test.ts`** - Onboarding flow E2E
+   - Brand new user (first interaction)
+   - Referrer collection and matching
+   - Name collection (first + last)
+   - Company/title collection
+   - Email collection and verification flow
+   - Onboarding completion (email verified event)
+   - All-at-once info provision (user provides everything)
+   - Selective gatekeeper tone validation
+
+2. **`bouncer.reengagement.test.ts`** - Re-engagement logic
+   - First re-engagement attempt (24h soft follow-up)
+   - Second re-engagement attempt (48h final attempt)
+   - No more messaging after 2 attempts
+   - User responds after re-engagement
+   - Disinterest detection ("not interested")
+   - Soft tone validation (not pushy)
+
+3. **`bouncer.edgecases.test.ts`** - Edge cases and variations
+   - Referrer fuzzy matching ("Ben" → "Ben Trenda")
+   - Referrer not found (store name_dropped)
+   - Single name responses (ask for last name)
+   - Middle name handling
+   - Email in sentence context
+   - Information out of order (company before name)
+   - Very brief responses (single words)
+   - Nomination extraction and storage
+   - LinkedIn URL extraction (various formats)
+   - Tone consistency with enthusiastic users
+
+#### B.2.3 Innovator Agent (2 test files)
+
+1. **`innovator.scenarios.test.ts`** - Core innovator scenarios
+   - Help finding customers (community request)
+   - Solution research for market analysis
+   - Intro opportunity acceptance
+   - Goal storage when stated
+   - Ambiguous intent handling ("need more leads")
+   - Re-engagement with high-value intro
+   - Re-engagement with low priority items only
+   - Business-focused tone validation
+
+2. **`innovator.innovator-tools.test.ts`** - Innovator-specific tools
+   - `update_innovator_profile` (solution description, target customers)
+   - `upload_prospects` (generate upload link)
+   - `check_intro_progress` (pending intro status)
+   - `request_credit_funding` (payment link generation)
+   - Tool combinations (multiple tools in one message)
+
+### B.3 Test Infrastructure Components
+
+#### B.3.1 Test Configuration Files
+
+Each agent has identical Jest + TypeScript test configuration:
+
+**`jest.config.js`:**
+```javascript
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  testMatch: ['**/__tests__/**/*.test.ts'],
+  testTimeout: 30000, // 30s for LLM API calls
+  moduleNameMapper: {
+    '@yachtparty/shared': '<rootDir>/../../shared/src',
+  },
+  globals: {
+    'ts-jest': {
+      tsconfig: '<rootDir>/tsconfig.test.json'
+    }
+  }
+};
+```
+
+**`tsconfig.test.json`:**
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "jest"],
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["src/**/*", "__tests__/**/*"]
+}
+```
+
+#### B.3.2 Fixtures (Test Data Builders)
+
+Each agent has `fixtures.ts` with builder functions for creating test data:
+
+**Concierge fixtures:**
+- `createTestUser()` - User with various states
+- `createTestConversation()` - Active conversation
+- `createTestMessages()` - Message patterns (engaged, terse, frustrated)
+- `createTestPriorities()` - User priorities by value tier (high, medium, low)
+- `createIntroOpportunities()` - Intro opportunities with match scores
+- `createOutstandingRequests()` - Community requests awaiting response
+- `createTestScenario()` - Complete scenarios (happy_path, multi_thread, user_frustrated)
+
+**Bouncer fixtures:**
+- `createTestUser()` - User in various onboarding states
+- `createUserByOnboardingStep()` - User at specific onboarding step
+- `createTestMessages()` - Onboarding message patterns
+- `createOnboardingProgress()` - Progress tracking state
+- `createReferrerUser()` - Existing users for referrer matching
+- `createNomination()` - Nomination data for testing
+- `createReengagementContext()` - Re-engagement scenario context
+
+**Innovator fixtures:**
+- `createTestInnovator()` - Innovator user with profile
+- `createInnovatorProfile()` - Company, solution, target customers
+- `createTestMessages()` - Innovator conversation patterns
+- `createIntroOpportunities()` - Pending intros with status
+- `createTestPriorities()` - Innovator-specific priorities
+
+#### B.3.3 Helpers (Assertion Functions)
+
+Each agent has `helpers.ts` with reusable assertion functions:
+
+**Common helpers:**
+- `verifyAgentResponse()` - Validate response structure
+- `verifyCall2Messages()` - Validate message quality (count, length, tone)
+- `verifyActionParams()` - Check action parameters
+- `checkToneHelpfulNotOvereager()` - Tone validation
+- `checkNoHallucinatedIntros()` - Ensure no invented introductions
+
+**Bouncer-specific helpers:**
+- `verifyOnboardingMessages()` - Onboarding-specific message validation
+- `verifyEmailVerificationFlow()` - Email verification flow checks
+- `verifyOnboardingComplete()` - Completion event validation
+- `verifyUserInfoCollected()` - Field extraction validation
+- `checkToneWelcomingProfessional()` - Gatekeeper tone checks
+
+#### B.3.4 Mocks
+
+**Supabase Mock (`mocks/supabase.mock.ts`):**
+
+Creates mock Supabase client with in-memory data:
+
+```typescript
+export function createMockSupabaseClient(data: {
+  users: User[];
+  conversations: Conversation[];
+  messages: Message[];
+  userPriorities?: UserPriority[];
+  communityRequests?: CommunityRequest[];
+  innovatorProfiles?: InnovatorProfile[];
+  pendingIntros?: IntroOpportunity[];
+}) {
+  // Returns mock Supabase client with .from(), .select(), .eq() methods
+  // All queries return from in-memory data arrays
+  // Supports chaining: .from('users').select('*').eq('id', userId)
+}
+```
+
+**Shared Package Mock:**
+
+```typescript
+jest.mock('@yachtparty/shared', () => {
+  const actual = jest.requireActual('@yachtparty/shared');
+  return {
+    ...actual,
+    createServiceClient: jest.fn(), // Mocked
+    publishEvent: jest.fn().mockResolvedValue(undefined), // Mocked
+    createAgentTask: jest.fn().mockResolvedValue(undefined), // Mocked
+  };
+});
+```
+
+### B.4 Running Tests
+
+**Prerequisites:**
+```bash
+export ANTHROPIC_API_KEY="sk-ant-api03-..."
+```
+
+**Run all tests for an agent:**
+```bash
+cd packages/agents/concierge
+npm test
+
+cd packages/agents/bouncer
+npm test
+
+cd packages/agents/innovator
+npm test
+```
+
+**Run specific test file:**
+```bash
+cd packages/agents/concierge
+npm test -- concierge.scenarios.test.ts
+```
+
+**Run specific test case:**
+```bash
+cd packages/agents/concierge
+npm test -- -t "should offer intro when opportunity exists"
+```
+
+**List all tests:**
+```bash
+cd packages/agents/concierge
+npx jest --listTests
+```
+
+### B.5 Key Testing Insights & Edge Cases
+
+#### B.5.1 Ambiguity Handling
+
+**What we're testing:**
+- Agent detects when user intent is unclear (e.g., "partners" could mean vendors, consultants, strategic partners)
+- Agent requests clarification instead of guessing
+- Agent presents options conversationally without exposing internal tools
+- Agent does NOT execute tools when requesting clarification
+
+**Example test:** `concierge.scenarios.test.ts:221-281`
+
+**Why it matters:** Human communication is full of ambiguity. The agent must ask clarifying questions rather than execute wrong actions.
+
+#### B.5.2 Multi-Message Patterns
+
+**What we're testing:**
+- Typo corrections ("Bran" then "Brian" within 60s → agent interprets as correction)
+- Sequential context building (user sends multiple messages adding detail)
+- Topic changes (user switches topic mid-conversation)
+- Self-corrections ("The first" → "Actually the second one")
+
+**Example tests:** `concierge.multi-message.test.ts:40-129`
+
+**Why it matters:** Users rarely provide perfect single messages. They correct themselves, add context incrementally, and change their minds.
+
+#### B.5.3 Re-engagement Social Judgment
+
+**What we're testing:**
+- Agent detects user frustration signals (terse responses, "never mind", delays)
+- Agent decides whether to message or wait based on priority value vs. social context
+- Agent extends task appropriately (7-90 days based on situation)
+- Agent uses soft language for re-engagement ("still interested?", "just checking")
+
+**Example tests:** `concierge.reengagement.test.ts:49-106`, `bouncer.reengagement.test.ts:109-150`
+
+**Why it matters:** Re-engagement is where most conversational AI fails. Users get annoyed by poorly-timed follow-ups.
+
+#### B.5.4 Tone Consistency
+
+**What we're testing:**
+- Concierge maintains helpful-not-overeager tone regardless of user enthusiasm
+- Bouncer maintains selective gatekeeper tone (not salesy)
+- Innovator maintains business-focused, results-oriented tone
+- No exclamation points in professional contexts
+- Response brevity matches user's communication style (terse user → brief responses)
+
+**Example tests:** All agents have tone validation in multiple test files
+
+**Why it matters:** Personality suppression is the main problem 2-LLM architecture solves. Tests must validate tone quality.
+
+#### B.5.5 Hallucination Prevention
+
+**What we're testing:**
+- Agent never mentions introductions that don't exist in priorities
+- Agent never invents solution research results
+- Agent only references data from mocked database
+- Agent doesn't fill in missing information with guesses
+
+**Example check:** `checkNoHallucinatedIntros()` helper validates every response
+
+**Why it matters:** LLMs are prone to hallucination. Tests must catch when agent invents information not provided.
+
+### B.6 Test Output Format
+
+Each test logs results for manual inspection:
+
+```
+=== Intro Opportunity Test ===
+User message: Do you know anyone who has experience with CTV advertising platforms?
+Agent response: I can ask the community if anyone knows someone with CTV platform experience. Would that be helpful?
+Actions: ask_community_question
+==============================
+```
+
+**Why manual inspection matters:**
+- Automated assertions can't catch all tone/quality issues
+- Developers can review naturalness of responses
+- Helps identify prompt improvements
+- Validates that agent "feels" right, not just technically correct
+
+### B.7 Lessons Learned & Best Practices
+
+**What Worked:**
+1. **Fixtures pattern** - Builder functions make test setup clean and maintainable
+2. **Mocked database** - In-memory data provides fast, deterministic tests
+3. **Real LLM calls** - Caught prompt engineering issues that unit tests would miss
+4. **Manual inspection logging** - Developers review response quality beyond assertions
+5. **Scenario-based organization** - Test files organized by user journeys, not technical components
+
+**What Didn't Work:**
+1. **Too many assertions** - Early tests had excessive checks that made them brittle
+2. **Testing LLM determinism** - Can't assert exact text, only patterns and presence of key elements
+3. **Mocking LLM calls** - Defeats purpose; must test real behavior
+4. **Integration with real database** - Too slow, hard to set up deterministic state
+
+**Best Practices:**
+
+1. **Test scenarios, not implementation**
+   - Bad: "Agent calls tool X with parameter Y"
+   - Good: "Agent handles customer finding request appropriately"
+
+2. **Use helpers for common checks**
+   - Extract reusable assertions (tone, hallucination, message quality)
+   - Don't duplicate assertion logic across tests
+
+3. **Provide rich test context in logs**
+   - Log user message, agent response, actions taken
+   - Makes debugging failures much easier
+
+4. **Test edge cases explicitly**
+   - Ambiguity, multi-message patterns, frustration
+   - These are where agents fail in production
+
+5. **Accept LLM variability**
+   - Don't assert exact text matches
+   - Check for patterns, keywords, structure
+   - Allow multiple valid responses
+
+6. **Keep tests focused**
+   - One scenario per test
+   - Clear test names describing what's being validated
+   - Easy to identify failures
+
+### B.8 Future Enhancements
+
+**Planned Improvements:**
+1. **Snapshot testing** - Save "golden" responses, flag significant changes
+2. **Cost tracking** - Log API usage per test suite
+3. **Performance benchmarking** - Track latency over time
+4. **Visual diff tool** - Compare agent responses across prompt changes
+5. **Production replay** - Capture real user messages, replay in tests
+6. **Adversarial testing** - Inject malicious/confusing inputs
+7. **Multi-language testing** - Validate behavior with non-English inputs
+8. **Load testing** - Verify behavior under concurrent requests
+
+**Coverage Gaps:**
+1. Quiet hours handling (no tests yet)
+2. Rate limit exhaustion scenarios
+3. Database constraint violations
+4. Network timeout handling
+5. Partial tool execution failures
+6. Concurrent agent invocations (same user, multiple messages)
+
+### B.9 Integration with CI/CD
+
+**Current State:**
+- Tests run manually with `npm test`
+- Requires `ANTHROPIC_API_KEY` environment variable
+- ~30 second timeout per test file
+
+**Future CI/CD Integration:**
+
+```yaml
+# .github/workflows/test.yml
+name: Agent E2E Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+      - run: npm install
+      - run: npm run build:shared
+      - run: npm test
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        working-directory: packages/agents/concierge
+```
+
+**Cost Considerations:**
+- Each test suite ~50 tests × $0.003 per test = ~$0.15 per run
+- Running on every push may be expensive
+- Consider: only run on PR, or subset of tests on push
+
+---
+
+## Appendix C: Introduction Flows - Critical Distinction
+
+**Date:** October 20, 2025
+**Issue:** Confusion between intro_opportunities (connector making intro) vs connection_requests (user receiving intro request)
+
+### The Problem
+
+We were conflating two completely different introduction flows under a single concept. This caused:
+- Hallucinations in agent responses (fabricating people for non-existent intros)
+- Incorrect messaging patterns (offering intros when we should ask if user knows someone)
+- Test confusion (unclear what data represents what type of intro)
+
+### The Solution: Three Separate Tables & Flows
+
+#### Flow 1: `intro_opportunities` - System Asks Connector to Make Intro
+
+**Definition:** Existing user (connector) is asked if they can introduce someone they know to an innovator on platform.
+
+**Parties:**
+- `connector_user_id` - The user being asked to make the intro (connector, on platform)
+- `prospect_name` - Person connector might know (off-platform)
+- `innovator_id` - Person seeking connection (introducee, on platform)
+
+**How it's created:**
+- Innovator uploads prospect list
+- We match prospects to users' LinkedIn connections
+- Users with connections receive intro_opportunity
+
+**Agent messaging example:**
+```
+"Hey Ben, I think you might know Tony Katsur at IAB. If so, Rob Sopkic from MediaMath
+is trying to get connected with him. A few members have vouched for Rob, so we think it
+might be worth a conversation for Tony. If you know him and are open to making the intro,
+we'll make sure you get taken care of too. No pressure obviously, lmk if I should take
+this off my list of things I'm watching for you."
+```
+
+**Lifecycle:**
+- `open` → `accepted`/`rejected` → `completed`/`cancelled`
+- Multiple connectors can have opportunities for same prospect
+- When one accepts, others move to `paused`
+- When one completes, others move to `cancelled`
+
+**User actions:**
+- Accept intro opportunity
+- Decline intro opportunity
+- Ask for more context
+
+---
+
+#### Flow 2: `connection_requests` - User Receives Intro Request
+
+**Definition:** Existing user (introducee) is asked if they want to be introduced to someone who wants to meet them.
+
+**Parties:**
+- `introducee_user_id` - User being asked if they want intro (introducee, on platform)
+- `requestor_name` - Person seeking connection (may or may not be on platform)
+- `requestor_user_id` OR `requestor_prospect_id` - Requestor's reference
+
+**How it's created:**
+- Innovator uploads prospect who later joins platform → connection_request created
+- Innovator directly requests intro to existing user (future)
+- User requests connection (may cost credits - TBD)
+
+**Agent messaging example:**
+```
+"Hey Ben, Rob Sopkic from MediaMath was hoping to connect with you. Several people here
+have vouched for him, so I thought it was worth asking you. Specifically, he's looking to
+discuss CTV advertising strategies and thought your experience at IAB would be valuable.
+Any interest? I can share details if you need more info or have specific questions."
+```
+
+**Lifecycle:**
+- `open` → `accepted`/`rejected` → `completed`
+- Expires after 30 days if no response
+
+**User actions:**
+- Accept connection request
+- Decline connection request
+- Ask for more details
+
+---
+
+#### Flow 3: `intro_offers` - User Spontaneously Offers Intro
+
+**Definition:** User (connector) proactively offers to introduce someone they know to another user (introducee).
+
+**Parties:**
+- `offering_user_id` - User making the offer (connector, on platform)
+- `introducee_user_id` - User who would receive intro (introducee, on platform, often innovator)
+- `prospect_name` - Person being offered for intro (usually off-platform)
+
+**How it's created:**
+- User responds to community request: "I know someone who can help"
+- User responds to connection request: "Not me, but I can intro you to Jim"
+- User spontaneously offers: "I can connect you with Sarah at Hulu"
+
+**Agent messaging example to introducee:**
+```
+"Ben mentioned he might be able to connect you with Jim James who leads marketing at ABC Corp.
+He thinks Jim could help with the CTV attribution question you asked about.
+Want me to follow up with Ben and see if he can make that intro?"
+```
+
+**Agent messaging example to connector (confirmation):**
+```
+"Thanks for offering to intro Rob to Jim James. Rob is interested.
+Before I facilitate, can you confirm Jim would be open to this?
+Specifically, Rob is looking to discuss CTV attribution strategies."
+```
+
+**Lifecycle:**
+- `pending_introducee_response` → Introducee accepts/declines
+- `pending_connector_confirmation` → Bounty set (if introducee is innovator), connector confirms details
+- `confirmed` → Both parties agreed
+- `completed` → Intro was made
+
+**Bounty logic:**
+- When introducee accepts → Query introducee's `warm_intro_bounty` (if innovator)
+- Set `bounty_credits` in intro_offers record
+- If not innovator → `bounty_credits = 0` (future logic TBD)
+
+**User actions:**
+- Offer introduction (creates record)
+- Confirm offer (after introducee accepts)
+- Decline to follow through
+- Introducee accepts/declines offer
+
+---
+
+### Implementation Checklist
+
+**Schema & Database:**
+- [x] Update `intro_opportunities` table documentation
+- [x] Add `connection_requests` table definition (with introducee_user_id)
+- [x] Add `intro_offers` table definition (with introducee_user_id)
+- [x] Add `warm_intro_bounty` field to `innovators` table
+- [x] Document bounty logic for intro_offers
+- [x] Create migration file: 012_intro_flows_tables.sql
+- [ ] Run migration in Supabase SQL editor
+- [ ] Download current schema from Supabase after migration
+- [ ] Update packages/database/SCHEMA.md with current ground truth
+- [ ] Add `intro_context` field to `intro_opportunities` (future sprint)
+- [ ] Update indexes for prospect matching (future sprint)
+
+**Tools & Functions:**
+- [ ] Remove/rename `create_intro_opportunity` tool (currently broken - see note below)
+- [ ] Create `accept_intro_opportunity` tool (for connectors)
+- [ ] Create `decline_intro_opportunity` tool (for connectors)
+- [ ] Create `accept_connection_request` tool (for introducees)
+- [ ] Create `decline_connection_request` tool (for introducees)
+- [ ] Create `offer_introduction` tool (creates intro_offers with bounty_credits = 0)
+- [ ] Create `accept_intro_offer` tool (for introducees - sets bounty from warm_intro_bounty)
+- [ ] Create `decline_intro_offer` tool (for introducees)
+- [ ] Create `confirm_intro_offer` tool (for connectors after introducee accepts)
+- [ ] Create function to create connection_requests when prospect → user
+- [ ] Agent of Humans: Handle intro_offers to innovators
+
+**Agent Prompts:**
+- [x] Add hallucination guards to Concierge personality
+- [x] Add hallucination guards to Innovator personality
+- [x] Update scenario examples to not show fabricated intros
+- [ ] Update intro_opportunity messaging examples
+- [ ] Add connection_request messaging examples
+
+**Account Manager:**
+- [ ] Prioritize intro_opportunities for connectors
+- [ ] Prioritize connection_requests for target users
+- [ ] Handle `paused` opportunities when another connector accepts
+- [ ] Handle `cancelled` opportunities when intro completes
+
+**Tests:**
+- [ ] Update test fixtures to distinguish intro_opportunities vs connection_requests
+- [ ] Add tests for intro_opportunity acceptance flow
+- [ ] Add tests for connection_request acceptance flow
+- [ ] Manual review of all intro-related tests
+
+---
+
+### CRITICAL NOTE: `create_intro_opportunity` Tool Is Broken
+
+The current `create_intro_opportunity` tool is **NOT** for the intro_opportunities table.
+
+**Current (wrong) definition:**
+```
+Tool: create_intro_opportunity
+Purpose: Create introduction opportunity when user offers to make an intro
+```
+
+This doesn't make sense. If a user says "I can introduce you to X", we don't create an intro_opportunity. We either:
+1. Create a connection_request (if X is on platform)
+2. Create a prospect record (if X is not on platform)
+
+**Proposed fix:**
+- Remove or rename `create_intro_opportunity` tool
+- Create `offer_introduction` tool that handles user offering to make intro
+- This tool should create either connection_request or prospect depending on context
+
+---
+
+### Key Distinctions Summary
+
+| Aspect | intro_opportunities | connection_requests | intro_offers |
+|--------|---------------------|---------------------|--------------|
+| **User Role** | Connector (making intro) | Introducee (receiving intro) | Connector (offering intro) |
+| **Question Asked** | "Can you introduce X to Y?" | "Do you want to meet X?" | User says: "I can intro you to X" |
+| **User Knows** | The prospect (off-platform) | No one yet - being introduced | The prospect (off-platform) |
+| **Incentive** | Earn credits for making intro | May earn credits for accepting | Earn credits for completed intro |
+| **Bounty Set By** | System (when created) | System or requestor (when created) | Introducee's warm_intro_bounty (when accepted) |
+| **Initiated By** | System (from prospect matching) | Requestor (innovator or user) | User (spontaneous offer) |
+| **Example Message** | "I think you might know Tony at IAB..." | "Rob from MediaMath wants to meet you..." | "Ben offered to intro you to Jim..." |
+| **Two-Step Process** | No (single acceptance) | No (single acceptance) | Yes (introducee accepts → bounty set → connector confirms) |
+| **Agent Handling** | Concierge/Innovator | Concierge/Innovator | Concierge → Innovator (if introducee is innovator) → Agent of Humans |
+
+---
+
+## Appendix D: Comprehensive Change Plan for Introduction Flows
+
+**Date:** October 20, 2025
+**Status:** Planning phase - NOT YET IMPLEMENTED
+
+### Current State Analysis
+
+After searching the codebase, `create_intro_opportunity` is referenced in 13 files:
+
+**Core Implementation:**
+1. `packages/shared/src/types/agents.ts` - AgentActionType definition
+2. `packages/agents/concierge/src/decision.ts` - Tool definition in Call 1
+3. `packages/agents/concierge/src/index.ts` - Tool execution
+4. `packages/agents/innovator/src/decision.ts` - Tool definition in Call 1
+5. `packages/agents/innovator/src/index.ts` - Tool execution
+6. `packages/agents/bouncer/src/index.ts` - Tool execution (for nominations)
+7. `packages/services/twilio-webhook/src/index.ts` - Webhook handling
+
+**Tests:**
+8. `packages/agents/concierge/__tests__/README.md` - Documentation
+9. `packages/agents/innovator/__tests__/helpers.ts` - Test fixtures
+10. `packages/agents/innovator/__tests__/innovator.scenarios.test.ts` - Test scenarios
+11. `packages/agents/bouncer/__tests__/helpers.ts` - Test fixtures
+12. `packages/agents/bouncer/__tests__/bouncer.edgecases.test.ts` - Nomination tests
+
+**Documentation:**
+13. `requirements.md` - Tool documentation
+
+### Current Tool Behavior (BROKEN)
+
+```typescript
+// In concierge/src/decision.ts
+3. create_intro_opportunity
+   - Use when: User wants to connect with someone specific
+   - Required params: prospect_name
+   - Optional params: prospect_company, reason
+```
+
+**What it currently does:**
+1. Publishes `user.intro_inquiry` event
+2. Payload: userId, conversationId, prospectName, prospectCompany, reason
+3. Returns action type: 'create_intro_opportunity'
+4. Returns introId: 'pending'
+
+**The problems:**
+- Name suggests it creates intro_opportunities (system-initiated connector requests)
+- Description says "User wants to connect" (sounds like user is requesting intro)
+- Actually being used for user offering to make intro (Bouncer nominations)
+- No actual database writes to intro_opportunities table
+- Confusing event name: user.intro_inquiry
+
+### What Each Flow Actually Needs
+
+#### Flow 1: intro_opportunities (System → Connector)
+**Trigger:** System has matched prospect to connector's LinkedIn connections
+**Agent:** Concierge/Innovator messages connector
+**Tools needed:**
+- `accept_intro_opportunity` - Connector accepts
+- `decline_intro_opportunity` - Connector declines
+
+**NOT CREATED BY USER ACTION** - Created by background prospect matching system
+
+---
+
+#### Flow 2: connection_requests (Requestor → Target)
+**Trigger:** Innovator wants to connect with existing user
+**Agent:** Concierge/Innovator messages target user
+**Tools needed:**
+- `request_connection` - Innovator requests intro (new tool)
+- `accept_connection_request` - Target accepts
+- `decline_connection_request` - Target declines
+
+**User action:** "I want to meet person X" (where X is on platform)
+
+---
+
+#### Flow 3: intro_offers (User → Target User)
+**Trigger:** User spontaneously offers to introduce someone
+**Agent:** Concierge captures offer → Innovator/Concierge messages target
+**Tools needed:**
+- `offer_introduction` - User offers intro (RENAME from create_intro_opportunity)
+- `accept_intro_offer` - Target accepts offer
+- `decline_intro_offer` - Target declines
+- `confirm_intro_offer` - Connector confirms after target accepts
+
+**User action:** "I can introduce you to X" or "I nominate X"
+
+---
+
+### Required Changes
+
+#### 1. Shared Types (`packages/shared/src/types/agents.ts`)
+
+**Remove:**
+```typescript
+| 'create_intro_opportunity'
+```
+
+**Add:**
+```typescript
+// Introduction flow actions
+| 'accept_intro_opportunity'     // Connector accepts system-prompted intro opportunity
+| 'decline_intro_opportunity'    // Connector declines intro opportunity
+
+| 'request_connection'           // Innovator requests intro to existing user
+| 'accept_connection_request'    // Target accepts connection request
+| 'decline_connection_request'   // Target declines connection request
+
+| 'offer_introduction'           // User offers to introduce someone (renamed from create_intro_opportunity)
+| 'accept_intro_offer'           // Target accepts intro offer
+| 'decline_intro_offer'          // Target declines intro offer
+| 'confirm_intro_offer'          // Connector confirms intro after target accepts
+```
+
+---
+
+#### 2. Concierge Decision Prompt (`packages/agents/concierge/src/decision.ts`)
+
+**Remove:**
+```typescript
+3. create_intro_opportunity
+   - Use when: User wants to connect with someone specific
+   - Required params: prospect_name
+   - Optional params: prospect_company, reason
+```
+
+**Add:**
+```typescript
+3. offer_introduction
+   - Use when: User proactively offers to introduce someone they know
+   - Examples: "I can connect you with X", "Let me intro you to Y", "I know someone at Company Z"
+   - Required params: prospect_name, target_context
+   - Optional params: prospect_company, prospect_title, reason
+   - Note: This creates an intro_offer that requires target acceptance + connector confirmation
+
+4. accept_intro_opportunity
+   - Use when: User accepts a system-presented intro opportunity (responding to "Do you know X at Company?")
+   - Required params: intro_opportunity_id
+
+5. decline_intro_opportunity
+   - Use when: User declines intro opportunity
+   - Required params: intro_opportunity_id
+   - Optional params: reason
+
+6. accept_connection_request
+   - Use when: User accepts someone wanting to connect with them
+   - Required params: connection_request_id
+
+7. decline_connection_request
+   - Use when: User declines connection request
+   - Required params: connection_request_id
+   - Optional params: reason
+```
+
+**Update tool selection guidance:**
+```typescript
+CRITICAL - User Intent Disambiguation:
+
+If user says "I want to meet X" or "Do you know anyone at Company?":
+→ Use publish_community_request (ask community if anyone knows them)
+→ DO NOT use offer_introduction (user is not offering, they're requesting)
+
+If user says "I can introduce you to X" or "Let me connect you with Y":
+→ Use offer_introduction (user is proactively offering an intro)
+
+If user is responding to intro opportunity we presented ("Yes, I know Tony"):
+→ Use accept_intro_opportunity
+
+If user is responding to connection request ("Sure, I'd like to meet them"):
+→ Use accept_connection_request
+```
+
+---
+
+#### 3. Innovator Decision Prompt (`packages/agents/innovator/src/decision.ts`)
+
+**Same changes as Concierge**, PLUS:
+
+```typescript
+10. request_connection
+   - Use when: Innovator wants intro to specific person on platform
+   - Required params: target_user_id, intro_context
+   - Optional params: offer_credits
+   - Note: Creates connection_request for target user
+```
+
+---
+
+#### 4. Tool Execution (`concierge/src/index.ts`, `innovator/src/index.ts`)
+
+**Remove:**
+```typescript
+case 'create_intro_opportunity': {
+  await publishEvent({
+    event_type: 'user.intro_inquiry',
+    ...
+  });
+}
+```
+
+**Add:**
+```typescript
+case 'offer_introduction': {
+  // Create intro_offer record
+  const { data: introOffer } = await supabase
+    .from('intro_offers')
+    .insert({
+      offering_user_id: user.id,
+      introducee_user_id: input.introducee_user_id, // Determined from context
+      prospect_name: input.prospect_name,
+      prospect_company: input.prospect_company,
+      prospect_title: input.prospect_title,
+      prospect_context: input.reason,
+      context_type: input.context_type || 'spontaneous', // 'community_request', 'connection_request', 'spontaneous'
+      context_id: input.context_id,
+      status: 'pending_introducee_response',
+      bounty_credits: 0, // Set when introducee accepts
+    })
+    .select()
+    .single();
+
+  // Publish event for introducee's Account Manager to prioritize
+  await publishEvent({
+    event_type: 'intro.offer_created',
+    aggregate_id: introOffer.id,
+    aggregate_type: 'intro_offer',
+    payload: {
+      offeringUserId: user.id,
+      introduceeUserId: input.introducee_user_id,
+      prospectName: input.prospect_name,
+      contextType: input.context_type,
+    },
+    created_by: 'concierge_agent',
+  });
+
+  return {
+    actions: [{
+      type: 'offer_introduction',
+      params: {
+        prospectName: input.prospect_name,
+        introduceeUserId: input.introducee_user_id,
+      },
+      reason: 'User offered introduction',
+    }],
+    introOfferId: introOffer.id,
+  };
+}
+
+case 'accept_intro_offer': {
+  // When introducee accepts intro offer
+  const { data: introOffer } = await supabase
+    .from('intro_offers')
+    .select('*, introducee:introducee_user_id(id)')
+    .eq('id', input.intro_offer_id)
+    .single();
+
+  // Check if introducee is an innovator
+  const { data: innovator } = await supabase
+    .from('innovators')
+    .select('warm_intro_bounty')
+    .eq('user_id', introOffer.introducee_user_id)
+    .single();
+
+  // Set bounty based on innovator status
+  const bountyCredits = innovator ? innovator.warm_intro_bounty : 0;
+
+  // Update intro_offer with acceptance and bounty
+  await supabase
+    .from('intro_offers')
+    .update({
+      status: 'pending_connector_confirmation',
+      introducee_response: 'Accepted',
+      bounty_credits: bountyCredits,
+    })
+    .eq('id', input.intro_offer_id);
+
+  await publishEvent({
+    event_type: 'intro.offer_accepted',
+    aggregate_id: input.intro_offer_id,
+    aggregate_type: 'intro_offer',
+    payload: {
+      introduceeUserId: user.id,
+      bountyCredits: bountyCredits,
+    },
+    created_by: 'concierge_agent',
+  });
+
+  return { actions: [{ type: 'accept_intro_offer', ... }] };
+}
+
+case 'accept_intro_opportunity': {
+  await supabase
+    .from('intro_opportunities')
+    .update({
+      status: 'accepted',
+      connector_response: 'Accepted',
+    })
+    .eq('id', input.intro_opportunity_id);
+
+  await publishEvent({
+    event_type: 'intro.opportunity_accepted',
+    aggregate_id: input.intro_opportunity_id,
+    aggregate_type: 'intro_opportunity',
+    payload: { connectorUserId: user.id },
+    created_by: 'concierge_agent',
+  });
+
+  // Pause other opportunities for same prospect
+  // Award credits to connector
+  // Notify innovator
+
+  return { actions: [{ type: 'accept_intro_opportunity', ... }] };
+}
+
+case 'accept_connection_request': {
+  await supabase
+    .from('connection_requests')
+    .update({
+      status: 'accepted',
+      introducee_response: 'Accepted',
+    })
+    .eq('id', input.connection_request_id);
+
+  await publishEvent({
+    event_type: 'connection.request_accepted',
+    aggregate_id: input.connection_request_id,
+    aggregate_type: 'connection_request',
+    payload: { introduceeUserId: user.id },
+    created_by: 'concierge_agent',
+  });
+
+  return { actions: [{ type: 'accept_connection_request', ... }] };
+}
+
+// Similar implementations for decline_intro_opportunity, decline_connection_request, etc.
+```
+
+---
+
+#### 5. Bouncer Agent (`packages/agents/bouncer/src/index.ts`)
+
+**Update nomination handling:**
+
+Currently uses `create_intro_opportunity` for nominations.
+**Change to:** `offer_introduction`
+
+When user nominates someone during onboarding, this is an intro_offer where:
+- `offering_user_id` = nominating user
+- `introducee_user_id` = system/platform (TBD - might be founder or specific innovator)
+- `prospect_name` = nominated person
+- `context_type` = 'nomination'
+- `bounty_credits` = 0 initially, set when introducee accepts
+
+---
+
+#### 6. Account Manager
+
+**Add prioritization logic for:**
+
+1. **intro_opportunities** → Add to connector's priorities
+   - Score based on: bounty_credits, prospect relevance, connector's connection strength
+
+2. **connection_requests** → Add to introducee's priorities
+   - Score based on: vouching signals, requestor relevance, intro_context quality
+
+3. **intro_offers** → Add to introducee's priorities (first) then connector's (after acceptance)
+   - Score based on: offering user's reputation, prospect relevance
+   - Note: When introducee accepts, bounty is set from innovator's warm_intro_bounty
+
+**Handle state transitions:**
+- When intro_opportunity accepted → pause others for same prospect
+- When intro_opportunity completed → cancel others for same prospect
+- When connection_request expires → remove from priorities
+
+---
+
+#### 7. Agent of Humans (Innovator Message Routing)
+
+**Add handling for intro_offers where target is innovator:**
+
+When intro_offer is accepted by innovator → Agent of Humans needs to:
+1. Get connector confirmation
+2. Facilitate introduction
+3. Update intro_offer status to 'confirmed' → 'completed'
+
+---
+
+#### 8. Personality Prompts
+
+**Update scenario examples** to distinguish:
+- Presenting intro_opportunity: "I think you might know Tony at IAB..."
+- Presenting connection_request: "Rob from MediaMath wants to meet you..."
+- Acknowledging intro_offer: "Thanks for offering to intro X to Y..."
+
+---
+
+#### 9. Tests
+
+**Update all test files:**
+- Rename `create_intro_opportunity` to `offer_introduction`
+- Add tests for `accept_intro_opportunity`, `decline_intro_opportunity`
+- Add tests for `accept_connection_request`, `decline_connection_request`
+- Add tests for `accept_intro_offer`, `confirm_intro_offer`
+- Update test fixtures to use correct table structures
+
+---
+
+#### 10. Events
+
+**New event types needed:**
+```typescript
+// intro_opportunities
+'intro.opportunity_created'      // System created opportunity
+'intro.opportunity_accepted'     // Connector accepted
+'intro.opportunity_declined'     // Connector declined
+'intro.opportunity_completed'    // Intro was made
+
+// connection_requests
+'connection.request_created'     // Requestor created request
+'connection.request_accepted'    // Target accepted
+'connection.request_declined'    // Target declined
+'connection.request_completed'   // Intro was made
+
+// intro_offers
+'intro.offer_created'            // User offered intro
+'intro.offer_accepted'           // Target accepted offer
+'intro.offer_declined'           // Target declined
+'intro.offer_confirmed'          // Connector confirmed
+'intro.offer_completed'          // Intro was made
+```
+
+**Remove:**
+```typescript
+'user.intro_inquiry' // Confusing/ambiguous - replace with above
+```
+
+---
+
+### Implementation Order
+
+**Phase 1: Schema & Events**
+1. Create migration for `connection_requests` table
+2. Create migration for `intro_offers` table
+3. Add `intro_context` field to `intro_opportunities`
+4. Define new event types
+
+**Phase 2: Core Tools**
+1. Rename `create_intro_opportunity` → `offer_introduction` in types
+2. Update tool execution in concierge/innovator/bouncer
+3. Add `accept_intro_opportunity`, `decline_intro_opportunity` tools
+4. Add `accept_connection_request`, `decline_connection_request` tools
+5. Add `accept_intro_offer`, `confirm_intro_offer` tools
+
+**Phase 3: Agent Prompts**
+1. Update Call 1 decision prompts with new tool definitions
+2. Update Call 2 personality prompts with correct messaging examples
+3. Add disambiguation guidance ("I want to meet X" vs "I can intro you to X")
+
+**Phase 4: Account Manager**
+1. Add prioritization for intro_opportunities
+2. Add prioritization for connection_requests
+3. Add prioritization for intro_offers
+4. Handle state transitions (pause/cancel)
+
+**Phase 5: Agent of Humans**
+1. Handle intro_offers to innovators
+2. Coordinate two-step acceptance (target → connector confirmation)
+
+**Phase 6: Tests**
+1. Update all test fixtures
+2. Update all test assertions
+3. Add new scenario tests
+4. Manual output review
+
+---
+
+### Risk Assessment
+
+**High Risk:**
+- Tests will break (all tests using `create_intro_opportunity`)
+- Agent behavior change (disambiguation required)
+- Multi-agent coordination for intro_offers
+
+**Medium Risk:**
+- Event handler updates needed
+- Account Manager complexity increase
+- Database migrations with data migration needs
+
+**Low Risk:**
+- Schema additions (new tables won't break existing)
+- Type updates (compile-time catches)
+
+---
+
+### Backward Compatibility
+
+**Breaking changes:**
+1. `create_intro_opportunity` action type removed
+2. `user.intro_inquiry` event removed
+3. Tool parameter schemas changed
+
+**Migration strategy:**
+- Deploy schema changes first (non-breaking)
+- Update agents with backward-compatible tool execution
+- Switch over to new tools
+- Remove old tools after validation
+
+---
+
+## E2E Testing Infrastructure
+
+### Overview
+
+Implemented database client parameterization across all agents and shared utilities to enable end-to-end simulation testing with isolated test databases. This allows for comprehensive testing of multi-agent workflows without affecting production data.
+
+### Phase 1: Database Client Parameterization (COMPLETED 2025-10-22)
+
+**Objective:** Add optional `dbClient` parameter to all functions that interact with the database, maintaining backward compatibility while enabling test database injection.
+
+**Files Modified:**
+
+1. **Shared Utilities (3 files):**
+   - `packages/shared/src/utils/events.ts` - 5 functions: `publishEvent()`, `createAgentTask()`, `markEventProcessed()`, `getUnprocessedEvents()`
+   - `packages/shared/src/utils/prospect-upgrade.ts` - 3 functions: `upgradeProspectsToUser()`, `shouldTriggerProspectUpgrade()`, `markProspectUpgradeChecked()`
+   - `packages/shared/src/utils/prospect-upload.ts` - 1 function: `uploadProspectsBatch()`
+
+2. **Agent Helper Functions:**
+   - `packages/agents/bouncer/src/onboarding-steps.ts` - 6 functions parameterized
+
+3. **Agent Entry Points (4 agents):**
+   - `packages/agents/bouncer/src/index.ts` - Uses context object pattern (`context.dbClient`)
+   - `packages/agents/concierge/src/index.ts` - Uses direct parameter passing
+   - `packages/agents/innovator/src/index.ts` - Uses direct parameter passing
+   - `packages/agents/account-manager/src/index.ts` - Uses direct parameter passing
+
+**Parameterization Pattern:**
+
+```typescript
+// Before
+async function myFunction(param1: string): Promise<void> {
+  const supabase = createServiceClient();
+  // ... use supabase
+}
+
+// After
+async function myFunction(
+  param1: string,
+  dbClient: SupabaseClient = createServiceClient()
+): Promise<void> {
+  const supabase = dbClient;
+  // ... use supabase
+}
+```
+
+**Configuration Fixes Applied:**
+
+1. **Root package.json**: Added `"packageManager": "npm@10.8.2"` for Turbo v2 compatibility
+2. **turbo.json**: Renamed `"pipeline"` to `"tasks"` for Turbo v2.x
+3. **Shared package**:
+   - Created `jest.config.js` with TypeScript support
+   - Added dependencies: `jest`, `ts-jest`, `@types/jest`
+4. **Dependency hoisting**: Removed duplicate @supabase/supabase-js installations to fix TypeScript type conflicts
+
+**Test Results:**
+
+- **Bouncer Agent**: 16/23 tests passing (7 pre-existing failures)
+- **Innovator Agent**: 32/34 tests passing (2 pre-existing failures)
+- **Shared Package**: 31/37 tests passing (6 pre-existing failures)
+- **Key Finding**: Zero regressions introduced by parameterization changes ✅
+
+**Deployment Verification:**
+
+- Successfully deployed twilio-webhook to Cloud Run (revision 00058-qrf)
+- All 5 packages built without TypeScript errors
+- Health checks passing, no runtime errors
+
+**Backward Compatibility:**
+
+All parameterization uses default values, maintaining 100% backward compatibility:
+- Existing code continues to work without modifications
+- New test code can inject test database clients
+- No breaking changes to agent interfaces
+
+### Phase 2: Test Infrastructure (COMPLETED 2025-10-22)
+
+**Objective:** Create test database utilities and simulation helpers for E2E testing.
+
+**Test Database Setup:**
+
+- Created dedicated test Supabase project: `yachtparty-test`
+- Exported production schema using Supabase CLI: `supabase db dump --schema public`
+- Applied schema to test database with psql (includes all tables, triggers, RLS policies, functions)
+- Created migration file: `packages/database/migrations/013_production_schema_snapshot.sql`
+
+**Components Built:**
+
+1. **Test Database Utilities (`packages/testing/src/helpers/db-utils.ts`):**
+   - `createTestDbClient()` - Creates isolated test database client with env var support
+   - `seedTestData()` - Seeds test database with fixture data (users, conversations, messages, events, tasks)
+   - `cleanTestData()` - Cleans up test data for specific user (cascade delete)
+   - `cleanTestDataByIds()` - Cleans up by specific IDs
+   - `cleanAllTestData()` - Cleans all test data matching pattern (destructive)
+   - `getEventsPublished()` - Retrieves events published during test
+   - `getAgentTasks()` - Retrieves agent tasks created during test
+
+2. **Simulation Test Helpers (`packages/testing/src/helpers/simulation-helpers.ts`):**
+   - `createSimulation()` - Creates complete simulation environment with:
+     - `userSends()` - Simulates user message, invokes correct agent
+     - `expectAgentResponse()` - Validates agent response (message count, content, actions)
+     - `expectEventPublished()` - Checks events were published
+     - `expectTaskScheduled()` - Checks tasks were scheduled
+     - `cleanup()` - Automatic cleanup after test
+   - `simulateOnboarding()` - Helper for complete onboarding workflow
+   - `simulateVerifiedConversation()` - Helper for verified user conversations
+   - `assert()`, `wait()`, `getLatestMessage()` - Test utility helpers
+
+3. **First E2E Test (`packages/testing/src/e2e/simulation-onboarding.test.ts`):**
+   - Complete onboarding flow: referral → name → email → verification
+   - Database state validation tests
+   - Incomplete onboarding edge case tests
+   - Helper-based simulation tests
+   - Demonstrates full workflow with real LLM calls
+
+4. **Documentation (`packages/testing/E2E_TESTING.md`):**
+   - Complete setup guide
+   - Test writing patterns
+   - Example tests
+   - Best practices
+   - Troubleshooting guide
+   - Cost considerations
+
+**Environment Configuration:**
+
+Required `.env.test` variables:
+```bash
+TEST_DATABASE_URL=postgresql://postgres.[ref]:[password]@...
+TEST_SUPABASE_URL=https://[ref].supabase.co
+TEST_SUPABASE_ANON_KEY=eyJhbGc...
+TEST_SUPABASE_SERVICE_KEY=eyJhbGc...
+ANTHROPIC_API_KEY=sk-ant-api03-...
+```
+
+**Key Benefits:**
+
+- ✅ Complete isolation from production data
+- ✅ Real agent behavior with actual LLM calls
+- ✅ Full database state validation
+- ✅ Easy cleanup between tests
+- ✅ Reusable simulation helpers
+- ✅ Supports all 4 agents (Bouncer, Concierge, Innovator, Account Manager)
+
+---
+
 ***
+
+
+
+---
+
+## Appendix Z: Concierge & Innovator Robustness Implementation Plan
+
+**Status:** In Progress  
+**Created:** October 23, 2025  
+**Purpose:** Detailed action plan for hardening Concierge and Innovator agents based on code review
+
+**Note:** Before implementing each item, verify it hasn't already been completed and the documentation is just out of date.
+
+### Phase 1: Critical Fixes (Blocking Issues - Must Do Before Any Testing)
+
+**Goal:** Prevent agent crashes and silent failures  
+**Timeline:** 1-2 hours  
+**Status:** Not Started  
+**Testing Checkpoint:** Run existing Concierge/Innovator tests, verify no crashes
+
+#### 1.1 Add JSON Parse Error Handling
+
+**⚠️ CHECK FIRST:** Search for try-catch blocks around JSON.parse in decision.ts files
+
+**Files:**
+- `packages/agents/concierge/src/decision.ts:128-132`
+- `packages/agents/innovator/src/decision.ts:540-548` (user message)
+- `packages/agents/innovator/src/decision.ts:599-605` (re-engagement)
+
+**Problem:** No error handling when Call 1 returns malformed JSON → agent crashes
+
+**Changes:**
+```typescript
+// Wrap JSON.parse in try-catch
+try {
+  const cleanedText = textBlock.text.trim().replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
+  const decision: Call1Output = JSON.parse(cleanedText);
+  return decision;
+} catch (error) {
+  console.error('[Agent Call 1] Failed to parse JSON:', error);
+  console.error('[Agent Call 1] Raw response:', cleanedText);
+  
+  // Fallback to safe default that won't crash
+  return {
+    tools_to_execute: [],
+    next_scenario: 'general_response',
+    context_for_call_2: {
+      primary_topic: 'processing your request',
+      tone: 'helpful',
+      personalization_hooks: {
+        user_name: context.user.first_name,
+        recent_context: 'Having trouble understanding that right now'
+      }
+    }
+  };
+}
+```
+
+**Testing:**
+- [ ] Unit test: Feed malformed JSON to decision parsing
+- [ ] Verify graceful fallback message sent to user
+
+---
+
+#### 1.2 Fix Concierge Tool Naming Inconsistency
+
+**⚠️ CHECK FIRST:** Search decision.ts for "create_intro_opportunity" and index.ts executeTool for "offer_introduction"
+
+**Files:**
+- `packages/agents/concierge/src/decision.ts:203-210` (tool prompt)
+- `packages/agents/concierge/src/index.ts:525-563` (executeTool)
+
+**Problem:** Decision prompt says `create_intro_opportunity` but executeTool uses `offer_introduction`
+
+**Decision:** Standardize on `offer_introduction` (matches existing executeTool implementation)
+
+**Changes:**
+```typescript
+// In decision.ts around line 203-210
+// OLD:
+3. **create_intro_opportunity**
+   - Use when: User spontaneously offers to introduce a prospect to someone on the platform
+
+// NEW:
+3. **offer_introduction**
+   - Use when: User spontaneously offers to introduce a prospect to someone on the platform
+```
+
+**Testing:**
+- [ ] Integration test: User offers intro → verify tool executes correctly
+- [ ] Check logs confirm "offer_introduction" tool executed
+
+---
+
+#### 1.3 Add Tool Parameter Validation
+
+**⚠️ CHECK FIRST:** Search for "validateToolParams" or similar validation functions in index.ts files
+
+**Files:**
+- `packages/agents/concierge/src/index.ts:429-960` (executeTool function)
+- `packages/agents/innovator/src/index.ts:516-1003` (executeTool function)
+
+**Problem:** Call 1 can select tools with IDs that don't exist → silent failures → user confusion
+
+**Changes:**
+
+**Step 1: Add validation helper function**
+```typescript
+/**
+ * Validate tool parameters before execution
+ * Returns error if required IDs don't exist in context
+ */
+function validateToolParams(
+  toolName: string, 
+  params: Record<string, any>,
+  context: {
+    userPriorities?: Array<{
+      id: string;
+      item_type: string;
+      item_id: string;
+      status: string;
+    }>;
+    outstandingCommunityRequests?: Array<{
+      id: string;
+      question: string;
+      created_at: string;
+    }>;
+    lastPresentedCommunityRequest?: {
+      requestId: string;
+      question: string;
+      presentedAt: string;
+    };
+  }
+): { valid: boolean; error?: string } {
+  
+  switch (toolName) {
+    case 'accept_intro_opportunity':
+    case 'decline_intro_opportunity':
+      const introOppExists = context.userPriorities?.some(
+        p => p.item_id === params.intro_opportunity_id && p.item_type === 'intro_opportunity'
+      );
+      if (!introOppExists) {
+        return { 
+          valid: false, 
+          error: `intro_opportunity ${params.intro_opportunity_id} not found in user priorities` 
+        };
+      }
+      break;
+      
+    case 'record_community_response':
+      if (!params.request_id) {
+        return { valid: false, error: 'request_id required for record_community_response' };
+      }
+      // Check if this request was presented to user
+      if (context.lastPresentedCommunityRequest?.requestId !== params.request_id) {
+        // Also check outstanding requests
+        const requestExists = context.outstandingCommunityRequests?.some(
+          r => r.id === params.request_id
+        );
+        if (!requestExists) {
+          return { 
+            valid: false, 
+            error: `community_request ${params.request_id} not found in context` 
+          };
+        }
+      }
+      break;
+      
+    // Note: accept_intro_offer, decline_intro_offer, etc. would need DB checks
+    // For now, let DB handle those (existing error logging is ok)
+  }
+  
+  return { valid: true };
+}
+```
+
+**Step 2: Use in executeTool**
+```typescript
+async function executeTool(
+  toolDef: { tool_name: string; params: Record<string, any> },
+  user: User,
+  conversation: Conversation,
+  context: {
+    recentMessages: Message[];
+    userPriorities: UserPriority[];
+    outstandingCommunityRequests: Array<{ id: string; question: string; created_at: string }>;
+    lastPresentedCommunityRequest?: {
+      requestId: string;
+      question: string;
+      presentedAt: string;
+    };
+  },
+  dbClient: SupabaseClient = createServiceClient()
+): Promise<{
+  actions?: AgentAction[];
+  requestId?: string;
+  introId?: string;
+  researchId?: string;
+  responseId?: string;
+  error?: string;        // NEW: Return errors
+  errorType?: string;    // NEW: Error classification
+}> {
+  
+  // VALIDATE PARAMETERS BEFORE EXECUTION
+  const validation = validateToolParams(toolDef.tool_name, toolDef.params, context);
+  if (!validation.valid) {
+    console.error(`[Tool Validation Failed] ${toolDef.tool_name}:`, validation.error);
+    
+    return {
+      actions: [],
+      error: validation.error,
+      errorType: 'validation_failed'
+    };
+  }
+  
+  // Continue with existing switch statement...
+  const supabase = dbClient;
+  const input = toolDef.params;
+
+  switch (toolDef.tool_name) {
+    // ... existing cases
+  }
+}
+```
+
+**Step 3: Handle errors in Call 2**
+
+Update personality prompt building to check for tool errors:
+
+```typescript
+// In index.ts handleUserMessage, after tool execution:
+const hasErrors = Object.values(toolResults).some(
+  result => result && typeof result === 'object' && 'error' in result
+);
+
+if (hasErrors) {
+  // Add error context to Call 2
+  const errorMessages = Object.entries(toolResults)
+    .filter(([_, result]) => result && typeof result === 'object' && 'error' in result)
+    .map(([tool, result]) => `${tool}: ${(result as any).error}`)
+    .join(', ');
+    
+  decision.context_for_call_2.tool_errors = errorMessages;
+}
+
+// In personality.ts buildPersonalityPrompt:
+if (parsedContext.tool_errors) {
+  guidance += `\n\n⚠️ TOOL EXECUTION ERRORS:
+Some tools failed to execute: ${parsedContext.tool_errors}
+
+You should acknowledge this gracefully without technical details:
+- "I'm having trouble with that right now. Let me look into it and get back to you."
+- "Something's not working on my end. Give me a moment to sort that out."
+
+Do NOT mention tool names, validation, or system errors to the user.`;
+}
+```
+
+**Testing:**
+- [ ] Unit test: Call tool with invalid intro_opportunity_id → verify error returned
+- [ ] Unit test: Call record_community_response with invalid request_id → verify error
+- [ ] Integration test: Verify Call 2 composes appropriate "I'm having trouble" message
+
+---
+
+### Phase 2: High Priority Improvements (Do This Week)
+
+**Goal:** Prevent spam, improve cost efficiency, standardize patterns  
+**Timeline:** 3-4 hours  
+**Status:** Not Started  
+**Testing Checkpoint:** Test re-engagement scenarios, verify costs with prompt caching
+
+#### 2.1 Implement Re-engagement Throttling
+
+**⚠️ CHECK FIRST:** Review `packages/services/task-processor/` for existing throttling logic. Search for "re_engagement" and "throttle" in task-processor code.
+
+**Files:**
+- To be determined after reviewing task-processor code
+- May need to add to `packages/agents/concierge/src/index.ts:254-424` (handleReengagement)
+- May need to add to `packages/agents/innovator/src/index.ts:224-377` (handleReengagement)
+
+**Problem:** No throttling → potential spam if re-engagement tasks keep firing
+
+**Requirements (from Spec 16.8.3):**
+- Max 1 re-engagement message per 7 days per user
+- Pause after 3 unanswered attempts in 90 days
+- Account Manager can override for critical priorities (score >90)
+
+**Approach:**
+
+**Option A: Throttling in task-processor (preferred)**
+```typescript
+// In task-processor re-engagement handler, before invoking agent:
+
+// Check recent re-engagement attempts
+const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+const { data: recentAttempts } = await supabase
+  .from('agent_actions_log')
+  .select('created_at, output_data')
+  .eq('user_id', task.user_id)
+  .eq('action_type', 're_engagement_message_sent')
+  .gte('created_at', sevenDaysAgo.toISOString())
+  .order('created_at', { ascending: false });
+
+if (recentAttempts && recentAttempts.length > 0) {
+  console.log(`[${task.id}] Throttling: User received re-engagement in last 7 days`);
+  
+  // Extend task by 7 more days
+  const scheduledFor = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await createAgentTask({
+    task_type: 're_engagement_check',
+    agent_type: task.agent_type,
+    user_id: task.user_id,
+    context_id: task.context_id,
+    context_type: task.context_type,
+    scheduled_for: scheduledFor.toISOString(),
+    priority: 'low',
+    context_json: {
+      ...(task.context_json || {}),
+      attemptCount: ((task.context_json as any)?.attemptCount || 0) + 1,
+      throttled: true,
+      throttledAt: new Date().toISOString()
+    },
+    created_by: 'task_processor',
+  }, supabase);
+  
+  return { success: true, data: { throttled: true } };
+}
+
+// Check for 3 unanswered attempts in 90 days
+const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+const { data: recentUnanswered } = await supabase
+  .from('agent_actions_log')
+  .select('created_at, output_data')
+  .eq('user_id', task.user_id)
+  .eq('action_type', 're_engagement_message_sent')
+  .gte('created_at', ninetyDaysAgo.toISOString());
+
+// Check if user responded after each attempt
+let unansweredCount = 0;
+for (const attempt of recentUnanswered || []) {
+  const attemptDate = new Date(attempt.created_at);
+  
+  // Check for user messages after this attempt
+  const { data: userResponses } = await supabase
+    .from('messages')
+    .select('id')
+    .eq('user_id', task.user_id)
+    .eq('role', 'user')
+    .gte('created_at', attemptDate.toISOString())
+    .limit(1);
+  
+  if (!userResponses || userResponses.length === 0) {
+    unansweredCount++;
+  }
+}
+
+if (unansweredCount >= 3) {
+  console.log(`[${task.id}] Pausing: User has not responded to 3 re-engagement attempts in 90 days`);
+  
+  // Mark task complete, don't create new one
+  await logAgentAction({
+    agentType: 'task_processor',
+    actionType: 're_engagement_paused',
+    userId: task.user_id,
+    contextId: task.id,
+    contextType: 'agent_task',
+    outputData: {
+      reason: 'too_many_unanswered_attempts',
+      unansweredCount,
+      pausedUntilManualOverride: true
+    }
+  }, supabase);
+  
+  return { success: true, data: { paused: true, reason: 'too_many_unanswered_attempts' } };
+}
+
+// If checks pass, proceed with agent invocation...
+```
+
+**Option B: Throttling in agent code**
+If task-processor doesn't handle this, add throttling check at start of handleReengagement in both agents.
+
+**Implementation Steps:**
+1. Review task-processor code to see current implementation
+2. Decide where to implement (task-processor vs agents)
+3. Implement throttling logic
+4. Add logging for throttled/paused attempts
+5. Test with various scenarios
+
+**Testing:**
+- [ ] Test: Send re-engagement, wait 5 days, try again → should be throttled
+- [ ] Test: Send 3 re-engagements with no user response → should pause
+- [ ] Test: User responds after 2nd re-engagement → counter resets
+- [ ] Test: Critical priority (score >90) → should override throttling (if implemented)
+
+---
+
+#### 2.2 Standardize Message History Filtering
+
+**⚠️ CHECK FIRST:** Check if message filtering has already been updated. Compare Concierge and Innovator filtering logic.
+
+**Files:**
+- `packages/agents/concierge/src/index.ts:195-203` (handleUserMessage)
+- `packages/agents/concierge/src/index.ts:380-391` (handleReengagement)
+- `packages/agents/innovator/src/index.ts:161-171` (handleUserMessage)
+- `packages/agents/innovator/src/index.ts:325-344` (handleReengagement)
+
+**Problem:** Inconsistent filtering - Concierge includes all messages, Innovator filters by role
+
+**Current State:**
+- **Concierge:** Includes all messages (system, user, concierge)
+- **Innovator:** Filters to only user/innovator messages
+
+**Decision:** Filter OUT system messages with `direction: 'inbound'` but KEEP those with `direction: 'outbound'`
+
+**Rationale:**
+- System messages with `direction: 'inbound'` are internal triggers (re-engagement checks, etc.)
+- System messages with `direction: 'outbound'` were sent to user (should be in history for self-reflection)
+- Agent's own messages should always be included (for self-reflection)
+- User messages should always be included
+
+**Changes:**
+```typescript
+// Standardized filter for both agents (in handleUserMessage and handleReengagement)
+
+const conversationMessages = context.recentMessages
+  .filter(msg => {
+    // Always include user messages
+    if (msg.role === 'user') return true;
+    
+    // Always include agent's own messages
+    if (msg.role === 'concierge' || msg.role === 'innovator' || msg.role === 'bouncer') return true;
+    
+    // Include system messages that were sent to user (outbound)
+    // Exclude internal system messages (inbound triggers)
+    if (msg.role === 'system') {
+      return msg.direction === 'outbound';
+    }
+    
+    // Exclude everything else
+    return false;
+  })
+  .map(m => ({
+    role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+    content: m.content
+  }));
+```
+
+**Testing:**
+- [ ] Verify system messages with `direction: 'inbound'` don't appear in Call 2 history
+- [ ] Verify system messages with `direction: 'outbound'` DO appear in Call 2 history
+- [ ] Verify agent can still self-reflect on own messages
+- [ ] Test with both Concierge and Innovator
+
+---
+
+#### 2.3 Remove Innovator Internal Message Injection
+
+**⚠️ CHECK FIRST:** Search for "Internal: Re-engagement check triggered" in innovator/src/index.ts
+
+**File:** `packages/agents/innovator/src/index.ts:333-336`
+
+**Problem:** Innovator adds internal message to conversation that Call 2 sees, inconsistent with Concierge
+
+**Current Code:**
+```typescript
+conversationMessages.push({
+  role: 'user',
+  content: `[Internal: Re-engagement check triggered. ${decision.threads_to_address?.length || 0} threads to address.]`,
+});
+```
+
+**Change:** Remove this completely - not needed, Call 2 gets context via personality prompt
+
+**Testing:**
+- [ ] Verify Innovator re-engagement still works without this message
+- [ ] Verify Call 2 composes appropriate messages
+
+---
+
+### Phase 3: Medium Priority Enhancements (Before Production Rollout)
+
+**Goal:** Handle edge cases, improve robustness  
+**Timeline:** 2-3 hours  
+**Status:** Not Started  
+**Testing Checkpoint:** Extensive message sequence testing
+
+#### 3.1 Add Multi-Delimiter Support for Message Sequences
+
+**⚠️ CHECK FIRST:** Search for "parseMessageSequences" or similar function. Check if delimiter support is already enhanced.
+
+**Files:**
+- `packages/agents/concierge/src/index.ts:213-218`
+- `packages/agents/innovator/src/index.ts:182-190`
+
+**Problem:** LLM might use different delimiter patterns → sequences fail to parse
+
+**Current:** Only supports `/\n---\n/`
+
+**Changes:**
+```typescript
+/**
+ * Parse message sequences with support for multiple delimiter patterns
+ * LLM might use various formats, so we try them all
+ */
+function parseMessageSequences(rawTexts: string[]): string[] {
+  const delimiters = [
+    /\n---\n/,           // Standard (current)
+    /\n--- \n/,          // With trailing space
+    / ---\n/,            // With leading space
+    /\n — — — \n/,       // Em dashes
+    /\n___\n/,           // Underscores
+    /\n===\n/,           // Equal signs
+    /^---$/m,            // Just three dashes on own line (multiline mode)
+  ];
+  
+  let messages = rawTexts;
+  
+  // Try each delimiter - some text might have multiple types
+  for (const delimiter of delimiters) {
+    messages = messages.flatMap(msg => 
+      msg.split(delimiter)
+        .map(m => m.trim())
+        .filter(m => m.length > 0)
+    );
+  }
+  
+  // If we ended up with more than 10 messages, something went wrong
+  // (probably split on common punctuation). Fall back to original.
+  if (messages.length > 10) {
+    console.warn('[Message Parsing] Too many splits, falling back to original:', messages.length);
+    return rawTexts.map(t => t.trim()).filter(t => t.length > 0);
+  }
+  
+  return messages;
+}
+
+// Use in both agents (replace existing split logic):
+const messageTexts = parseMessageSequences(rawTexts);
+```
+
+**Testing:**
+- [ ] Unit test: Message with `\n---\n` → parses correctly
+- [ ] Unit test: Message with `\n — — — \n` → parses correctly
+- [ ] Unit test: Message with `\n___\n` → parses correctly
+- [ ] Unit test: Message with multiple delimiters → parses correctly
+- [ ] Unit test: Message with >10 potential splits → falls back to original
+
+---
+
+#### 3.2 Enhance Call 2 Anti-Hallucination for Priority Opportunities
+
+**⚠️ CHECK FIRST:** Search personality.ts for "NO SPECIFIC NAME PROVIDED" or similar warnings
+
+**Files:**
+- `packages/agents/concierge/src/personality.ts` (buildPersonalityPrompt)
+- `packages/agents/innovator/src/personality.ts` (buildPersonalityPrompt)
+
+**Problem:** Call 2 might hallucinate names even with guidance, especially at temp 0.7
+
+**Changes:**
+```typescript
+// In buildPersonalityPrompt, add explicit check for priority_opportunity scenario
+
+// Parse context to check for names
+let parsedContext: any = {};
+try {
+  parsedContext = JSON.parse(contextForResponse);
+} catch (e) {
+  // Already handled elsewhere
+}
+
+if (scenario === 'priority_opportunity') {
+  // Check if actual names/details are provided
+  const hasSpecificPerson = 
+    toolResults?.prospectName || 
+    parsedContext?.personalization_hooks?.specific_person_name ||
+    parsedContext?.primary_topic?.match(/\b[A-Z][a-z]+ [A-Z][a-z]+\b/); // Name pattern
+  
+  if (!hasSpecificPerson) {
+    guidance += `\n\n⚠️ CRITICAL - NO SPECIFIC PERSON NAME PROVIDED:
+
+You MUST use generic phrasing. DO NOT invent names.
+
+CORRECT phrases:
+- "a connection at [Company]"
+- "someone who has experience with [topic]"
+- "someone in the [industry] space"
+- "a contact who specializes in [area]"
+
+INCORRECT (DO NOT USE):
+- "Mike at Google"
+- "Sarah Chen at Hulu"
+- "John Smith who scaled their platform"
+- Any specific person name you don't have
+
+If you don't have a name, you don't have a name. Be generic and factual.
+
+Example: "Found a connection at Google who has experience with CTV advertising. Want me to reach out and see if they're open to an intro?"
+
+NOT: "Found Mike at Google who scaled their CTV platform to $100M..." (you made this up!)`;
+  } else {
+    // We have a name, but still remind to use it correctly
+    guidance += `\n\nNote: You have specific person information in the context. Use ONLY the details provided. Do not embellish or add extra context not in the data.`;
+  }
+}
+```
+
+**Testing:**
+- [ ] Test priority_opportunity with NO name in context → verify generic phrasing
+- [ ] Test priority_opportunity WITH name in context → verify uses provided name only
+- [ ] Human review: 20 random priority_opportunity messages for hallucinations
+
+---
+
+#### 3.3 Add Enhanced Error Logging
+
+**⚠️ CHECK FIRST:** Check if error logging already includes decision and tool results
+
+**Files:**
+- `packages/agents/concierge/src/index.ts` (error handler in invokeConciergeAgent)
+- `packages/agents/innovator/src/index.ts` (error handler in invokeInnovatorAgent)
+
+**Problem:** Error logs don't include enough context for debugging
+
+**Changes:**
+```typescript
+// In both agents, error handler:
+
+} catch (error) {
+  console.error('[Agent Error]:', error);
+
+  // Enhanced error logging with full context
+  await logAgentAction({
+    agentType: 'concierge', // or 'innovator'
+    actionType: 'agent_invocation_error',
+    userId: user.id,
+    contextId: conversation.id,
+    contextType: 'conversation',
+    inputData: {
+      messageContent: message.content,
+      messageRole: message.role,
+      messageId: message.id,
+      timestamp: new Date().toISOString(),
+    },
+    outputData: {
+      // Include decision if it was generated
+      call1Decision: typeof decision !== 'undefined' ? decision : null,
+      // Include tool results if any were generated
+      toolResults: typeof toolResults !== 'undefined' ? toolResults : null,
+      // Include error context
+      errorContext: {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+      }
+    },
+    error: error instanceof Error ? error.message : String(error),
+    latencyMs: Date.now() - startTime,
+  }, dbClient);
+
+  // Return graceful fallback
+  return {
+    immediateReply: true,
+    messages: ["I'm having trouble processing that right now. Could you try rephrasing?"],
+    actions: [],
+  };
+}
+```
+
+**Testing:**
+- [ ] Trigger an error scenario (invalid tool, LLM timeout, etc.)
+- [ ] Verify logs contain full context (decision, tool results, error stack)
+- [ ] Verify user receives graceful fallback message
+
+---
+
+### Phase 3.4: Account Manager - Intro Flow Prioritization (CRITICAL)
+
+**Goal:** Enable Account Manager to prioritize all three intro flows
+**Timeline:** 2-3 hours
+**Status:** ✅ COMPLETED (October 24, 2025)
+**Priority:** CRITICAL - Blocking Production
+**Testing Checkpoint:** Verify intro opportunities appear in user priorities
+
+**⚠️ CHECK FIRST:** Search Account Manager for "intro_opportunities", "connection_requests", "intro_offers"
+
+**Problem:** Account Manager has NO logic to prioritize intro flow opportunities. The database tables exist, tools work in agents, but opportunities are never surfaced to users because Account Manager doesn't know about them.
+
+**Files to Update:**
+- `packages/agents/account-manager/src/index.ts` - Main prioritization logic
+- May need new file: `packages/agents/account-manager/src/intro-prioritization.ts`
+
+**Required Changes:**
+
+#### 1. Add Intro Opportunities Prioritization
+
+```typescript
+/**
+ * Load intro_opportunities for this user where they are the connector
+ * Score based on: bounty_credits, prospect relevance, connection strength
+ */
+async function loadIntroOpportunities(
+  userId: string,
+  supabase: SupabaseClient
+): Promise<Array<{ id: string; score: number; reason: string; data: any }>> {
+  const { data: opportunities } = await supabase
+    .from('intro_opportunities')
+    .select('*, prospect:prospect_id(*), innovator:innovator_id(*)')
+    .eq('connector_user_id', userId)
+    .eq('status', 'open')
+    .order('created_at', { ascending: false });
+
+  if (!opportunities) return [];
+
+  return opportunities.map(opp => {
+    let score = 50; // Base score
+
+    // Higher bounty = higher priority
+    score += Math.min(opp.bounty_credits / 2, 30); // Max +30 for 60 credits
+
+    // LinkedIn connection strength matters
+    if (opp.connection_strength === 'first_degree') score += 15;
+    else if (opp.connection_strength === 'second_degree') score += 5;
+
+    // Recent prospects more urgent
+    const daysSinceCreated = daysBetween(new Date(opp.created_at), new Date());
+    if (daysSinceCreated < 3) score += 10;
+
+    return {
+      id: opp.id,
+      score,
+      reason: `Intro opportunity: Connect ${opp.prospect.name} at ${opp.prospect.company} to ${opp.innovator.first_name} (${opp.bounty_credits} credits)`,
+      data: {
+        item_type: 'intro_opportunity',
+        item_id: opp.id,
+        prospect_name: opp.prospect.name,
+        prospect_company: opp.prospect.company,
+        bounty_credits: opp.bounty_credits,
+      }
+    };
+  });
+}
+```
+
+#### 2. Add Connection Requests Prioritization
+
+```typescript
+/**
+ * Load connection_requests where this user is the introducee (target)
+ * Score based on: vouching signals, requestor relevance, intro_context quality
+ */
+async function loadConnectionRequests(
+  userId: string,
+  supabase: SupabaseClient
+): Promise<Array<{ id: string; score: number; reason: string; data: any }>> {
+  const { data: requests } = await supabase
+    .from('connection_requests')
+    .select('*')
+    .eq('introducee_user_id', userId)
+    .eq('status', 'open')
+    .order('created_at', { ascending: false });
+
+  if (!requests) return [];
+
+  return requests.map(req => {
+    let score = 60; // Base score (higher than intro_opportunities - direct request)
+
+    // Vouching increases priority significantly
+    const vouchCount = req.vouched_by_user_ids?.length || 0;
+    score += vouchCount * 20; // Each vouch adds 20 points
+
+    // Requestor credits spent shows seriousness
+    score += Math.min(req.requestor_credits_spent / 5, 15); // Max +15
+
+    // Time-sensitive: newer requests more urgent
+    const daysSinceCreated = daysBetween(new Date(req.created_at), new Date());
+    if (daysSinceCreated < 2) score += 15;
+    else if (daysSinceCreated > 14) score -= 10; // Stale requests less urgent
+
+    return {
+      id: req.id,
+      score,
+      reason: `Connection request: ${req.requestor_name} wants to meet you${vouchCount > 0 ? ` (${vouchCount} vouch${vouchCount > 1 ? 'es' : ''})` : ''}`,
+      data: {
+        item_type: 'connection_request',
+        item_id: req.id,
+        requestor_name: req.requestor_name,
+        requestor_company: req.requestor_company,
+        intro_context: req.intro_context,
+        vouch_count: vouchCount,
+      }
+    };
+  });
+}
+```
+
+#### 3. Add Intro Offers Prioritization
+
+```typescript
+/**
+ * Load intro_offers where this user is introducee OR connector
+ * Two-phase flow: introducee accepts first, then connector confirms
+ */
+async function loadIntroOffers(
+  userId: string,
+  supabase: SupabaseClient
+): Promise<Array<{ id: string; score: number; reason: string; data: any }>> {
+  // Get offers where user is introducee (pending their response)
+  const { data: introduceeOffers } = await supabase
+    .from('intro_offers')
+    .select('*, offering_user:offering_user_id(first_name, last_name)')
+    .eq('introducee_user_id', userId)
+    .eq('status', 'pending_introducee_response')
+    .order('created_at', { ascending: false });
+
+  // Get offers where user is connector (pending their confirmation)
+  const { data: connectorOffers } = await supabase
+    .from('intro_offers')
+    .select('*, introducee:introducee_user_id(first_name, last_name)')
+    .eq('offering_user_id', userId)
+    .eq('status', 'pending_connector_confirmation')
+    .order('created_at', { ascending: false });
+
+  const priorities: Array<{ id: string; score: number; reason: string; data: any }> = [];
+
+  // Prioritize introducee offers (user needs to accept/decline)
+  (introduceeOffers || []).forEach(offer => {
+    let score = 55; // Base score
+
+    // Higher bounty = more urgent
+    score += Math.min(offer.bounty_credits / 2, 25);
+
+    // Context-based scoring
+    if (offer.context_type === 'community_request') score += 10; // User asked for this
+    if (offer.context_type === 'nomination') score += 5; // Someone nominated this person
+
+    // Recent offers more urgent
+    const daysSinceCreated = daysBetween(new Date(offer.created_at), new Date());
+    if (daysSinceCreated < 2) score += 10;
+
+    priorities.push({
+      id: offer.id,
+      score,
+      reason: `Intro offer: ${offer.offering_user.first_name} can introduce you to ${offer.prospect_name}${offer.bounty_credits > 0 ? ` (${offer.bounty_credits} credits)` : ''}`,
+      data: {
+        item_type: 'intro_offer',
+        item_id: offer.id,
+        role: 'introducee',
+        prospect_name: offer.prospect_name,
+        prospect_company: offer.prospect_company,
+        offering_user_name: `${offer.offering_user.first_name} ${offer.offering_user.last_name}`,
+        bounty_credits: offer.bounty_credits,
+      }
+    });
+  });
+
+  // Prioritize connector confirmation (user offered intro, introducee accepted)
+  (connectorOffers || []).forEach(offer => {
+    let score = 70; // High priority - user already committed to this
+
+    // Recent acceptances most urgent
+    const daysSinceCreated = daysBetween(new Date(offer.created_at), new Date());
+    if (daysSinceCreated < 1) score += 15; // Less than 1 day old - very urgent
+
+    priorities.push({
+      id: offer.id,
+      score,
+      reason: `Confirm intro: ${offer.introducee.first_name} accepted your offer to meet ${offer.prospect_name}`,
+      data: {
+        item_type: 'intro_offer',
+        item_id: offer.id,
+        role: 'connector',
+        prospect_name: offer.prospect_name,
+        introducee_name: `${offer.introducee.first_name} ${offer.introducee.last_name}`,
+      }
+    });
+  });
+
+  return priorities;
+}
+```
+
+#### 4. Integrate into Main Prioritization Flow
+
+```typescript
+// In main Account Manager prioritization function:
+
+export async function calculateUserPriorities(
+  userId: string,
+  supabase: SupabaseClient
+): Promise<UserPriority[]> {
+
+  const allPriorities: Array<{ id: string; score: number; reason: string; data: any }> = [];
+
+  // Existing prioritization
+  allPriorities.push(...await loadCommunityRequests(userId, supabase));
+  allPriorities.push(...await loadSolutionResearch(userId, supabase));
+
+  // NEW: Intro flow prioritization
+  allPriorities.push(...await loadIntroOpportunities(userId, supabase));
+  allPriorities.push(...await loadConnectionRequests(userId, supabase));
+  allPriorities.push(...await loadIntroOffers(userId, supabase));
+
+  // Sort by score (highest first)
+  allPriorities.sort((a, b) => b.score - a.score);
+
+  // Take top 5
+  const topPriorities = allPriorities.slice(0, 5);
+
+  // Insert into user_priorities table
+  for (const priority of topPriorities) {
+    await supabase.from('user_priorities').insert({
+      user_id: userId,
+      item_type: priority.data.item_type,
+      item_id: priority.data.item_id,
+      priority_score: priority.score,
+      reason: priority.reason,
+      context_json: priority.data,
+    });
+  }
+
+  return topPriorities as UserPriority[];
+}
+```
+
+#### 5. Handle State Transitions
+
+```typescript
+/**
+ * When intro_opportunity accepted → pause other opportunities for same prospect
+ */
+async function handleIntroOpportunityAccepted(
+  introOpportunityId: string,
+  supabase: SupabaseClient
+): Promise<void> {
+  // Get the accepted opportunity
+  const { data: accepted } = await supabase
+    .from('intro_opportunities')
+    .select('prospect_id')
+    .eq('id', introOpportunityId)
+    .single();
+
+  if (!accepted) return;
+
+  // Pause all other open opportunities for this prospect
+  await supabase
+    .from('intro_opportunities')
+    .update({ status: 'paused' })
+    .eq('prospect_id', accepted.prospect_id)
+    .eq('status', 'open')
+    .neq('id', introOpportunityId);
+
+  console.log(`[Account Manager] Paused other intro_opportunities for prospect ${accepted.prospect_id}`);
+}
+
+/**
+ * When intro_opportunity completed → cancel others for same prospect
+ */
+async function handleIntroOpportunityCompleted(
+  introOpportunityId: string,
+  supabase: SupabaseClient
+): Promise<void> {
+  // Get the completed opportunity
+  const { data: completed } = await supabase
+    .from('intro_opportunities')
+    .select('prospect_id')
+    .eq('id', introOpportunityId)
+    .single();
+
+  if (!completed) return;
+
+  // Cancel all other opportunities for this prospect
+  await supabase
+    .from('intro_opportunities')
+    .update({ status: 'cancelled' })
+    .eq('prospect_id', completed.prospect_id)
+    .in('status', ['open', 'paused'])
+    .neq('id', introOpportunityId);
+
+  console.log(`[Account Manager] Cancelled other intro_opportunities for prospect ${completed.prospect_id}`);
+}
+```
+
+**Testing:**
+- [ ] Create test intro_opportunity → verify appears in priorities
+- [ ] Create test connection_request with vouch → verify high score
+- [ ] Create test intro_offer → verify appears for introducee
+- [ ] Accept intro_offer as introducee → verify appears for connector
+- [ ] Accept intro_opportunity → verify other opportunities paused
+- [ ] Complete intro_opportunity → verify other opportunities cancelled
+- [ ] Test scoring algorithm with various scenarios
+
+---
+
+### Phase 3.5: Re-engagement Throttling (HIGH PRIORITY)
+
+**Goal:** Prevent spam by throttling re-engagement messages
+**Timeline:** 2 hours
+**Status:** ✅ COMPLETED (October 24, 2025)
+**Priority:** HIGH - Spam Risk
+**Testing Checkpoint:** Verify max 1 re-engagement per 7 days
+
+**⚠️ CHECK FIRST:** Search for existing throttling in task-processor or agent code
+
+**Problem:** No throttling exists. Re-engagement tasks could fire repeatedly, spamming users.
+
+**Requirements (from Spec 16.8.3):**
+- Max 1 re-engagement message per 7 days per user
+- Pause after 3 unanswered attempts in 90 days
+- Account Manager can override for critical priorities (score >90)
+
+**Decision:** Implement in agents (both Concierge and Innovator) at start of handleReengagement
+
+**Files to Update:**
+- `packages/agents/concierge/src/index.ts` - handleReengagement function
+- `packages/agents/innovator/src/index.ts` - handleReengagement function
+
+**Implementation:**
+
+```typescript
+// At the very beginning of handleReengagement function (before Step 1)
+
+async function handleReengagement(
+  message: Message,
+  user: User,
+  conversation: Conversation,
+  startTime: number,
+  dbClient: SupabaseClient
+): Promise<AgentResponse> {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  console.log(`[Concierge Re-engagement] Starting re-engagement check for user ${user.id}`);
+
+  // THROTTLING CHECKS (NEW)
+
+  // Check 1: No re-engagement in last 7 days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const { data: recentAttempts } = await dbClient
+    .from('agent_actions_log')
+    .select('created_at')
+    .eq('user_id', user.id)
+    .eq('action_type', 're_engagement_message_sent')
+    .gte('created_at', sevenDaysAgo.toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (recentAttempts && recentAttempts.length > 0) {
+    const lastAttemptDate = new Date(recentAttempts[0].created_at);
+    const daysSinceLastAttempt = (Date.now() - lastAttemptDate.getTime()) / (1000 * 60 * 60 * 24);
+
+    console.log(`[Concierge Re-engagement] Throttled: Last re-engagement was ${daysSinceLastAttempt.toFixed(1)} days ago`);
+
+    // Extend task by remaining days to reach 7 days
+    const extendDays = Math.ceil(7 - daysSinceLastAttempt);
+    const scheduledFor = new Date();
+    scheduledFor.setDate(scheduledFor.getDate() + extendDays);
+
+    await createAgentTask({
+      task_type: 're_engagement_check',
+      agent_type: 'concierge',
+      user_id: user.id,
+      context_id: conversation.id,
+      context_type: 'conversation',
+      scheduled_for: scheduledFor.toISOString(),
+      priority: 'low',
+      context_json: {
+        throttled: true,
+        throttledReason: '7_day_limit',
+        lastAttemptDate: lastAttemptDate.toISOString(),
+      },
+      created_by: 'concierge_agent',
+    }, dbClient);
+
+    await logAgentAction({
+      agentType: 'concierge',
+      actionType: 're_engagement_throttled',
+      userId: user.id,
+      contextId: conversation.id,
+      contextType: 'conversation',
+      outputData: {
+        throttledReason: '7_day_limit',
+        lastAttemptDate: lastAttemptDate.toISOString(),
+        extendDays,
+      },
+      latencyMs: Date.now() - startTime,
+    }, dbClient);
+
+    return {
+      immediateReply: false,
+      messages: [],
+      actions: [],
+    };
+  }
+
+  // Check 2: No more than 3 unanswered attempts in 90 days
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const { data: allAttempts } = await dbClient
+    .from('agent_actions_log')
+    .select('created_at')
+    .eq('user_id', user.id)
+    .eq('action_type', 're_engagement_message_sent')
+    .gte('created_at', ninetyDaysAgo.toISOString())
+    .order('created_at', { ascending: false });
+
+  let unansweredCount = 0;
+  for (const attempt of (allAttempts || [])) {
+    const attemptDate = new Date(attempt.created_at);
+
+    // Check if user responded after this attempt
+    const { data: userResponses } = await dbClient
+      .from('messages')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('role', 'user')
+      .gte('created_at', attemptDate.toISOString())
+      .limit(1);
+
+    if (!userResponses || userResponses.length === 0) {
+      unansweredCount++;
+    } else {
+      // User responded - reset counter
+      break;
+    }
+  }
+
+  if (unansweredCount >= 3) {
+    console.log(`[Concierge Re-engagement] Paused: User has not responded to ${unansweredCount} attempts in 90 days`);
+
+    await logAgentAction({
+      agentType: 'concierge',
+      actionType: 're_engagement_paused',
+      userId: user.id,
+      contextId: conversation.id,
+      contextType: 'conversation',
+      outputData: {
+        pausedReason: 'too_many_unanswered_attempts',
+        unansweredCount,
+        requiresManualOverride: true,
+      },
+      latencyMs: Date.now() - startTime,
+    }, dbClient);
+
+    // Don't create new task - paused until manual override
+    return {
+      immediateReply: false,
+      messages: [],
+      actions: [],
+    };
+  }
+
+  // CONTINUE with existing re-engagement logic...
+  console.log(`[Concierge Re-engagement] Throttling checks passed (${unansweredCount} unanswered in 90 days)`);
+
+  // Parse re-engagement context from system message
+  const reengagementContext = JSON.parse(message.content);
+  // ... rest of existing code
+}
+```
+
+**Testing:**
+- [ ] Send re-engagement → wait 5 days → trigger another → should be throttled
+- [ ] Send 3 re-engagements with no user response → 4th should pause permanently
+- [ ] User responds after 2nd re-engagement → counter should reset
+- [ ] Verify logs show throttled/paused reasons
+- [ ] Test with both Concierge and Innovator
+
+---
+
+### Phase 3.6: Anti-Hallucination for Priority Opportunities (IMPORTANT)
+
+**Goal:** Prevent LLM from hallucinating names in priority_opportunity scenarios
+**Timeline:** 1 hour
+**Status:** ✅ COMPLETED (Previously Implemented - Verified October 24, 2025)
+**Priority:** IMPORTANT - Quality Risk
+**Testing Checkpoint:** Test 20 priority_opportunity messages for hallucinations
+
+**⚠️ CHECK FIRST:** Search personality.ts for "NO SPECIFIC NAME PROVIDED"
+
+**Problem:** Call 2 might invent names even with temperature 0.7, especially when presenting vague priority opportunities.
+
+**Files to Update:**
+- `packages/agents/concierge/src/personality.ts` - buildPersonalityPrompt function
+- `packages/agents/innovator/src/personality.ts` - buildPersonalityPrompt function
+
+**Implementation:**
+
+```typescript
+// In buildPersonalityPrompt function, add after scenario-specific guidance:
+
+export function buildPersonalityPrompt(
+  scenario: string,
+  contextForResponse: string,
+  toolResults?: Record<string, any>
+): string {
+  let prompt = BASE_PERSONALITY_PROMPT;
+
+  // ... existing scenario selection logic
+
+  // NEW: Anti-hallucination for priority_opportunity
+  if (scenario === 'priority_opportunity') {
+    // Parse context to check for actual names
+    let parsedContext: any = {};
+    try {
+      parsedContext = JSON.parse(contextForResponse);
+    } catch (e) {
+      // If context doesn't parse, be extra careful
+      parsedContext = {};
+    }
+
+    // Check if we have specific person details
+    const hasSpecificPerson =
+      toolResults?.prospectName ||
+      parsedContext?.personalization_hooks?.specific_person_name ||
+      parsedContext?.primary_topic?.match(/\b[A-Z][a-z]+ [A-Z][a-z]+\b/); // Name pattern
+
+    if (!hasSpecificPerson) {
+      prompt += `\n\n⚠️ CRITICAL - NO SPECIFIC PERSON NAME PROVIDED:
+
+You MUST use generic phrasing. DO NOT invent names or specific details.
+
+CORRECT phrases (use these):
+- "a connection at [Company]"
+- "someone who has experience with [topic]"
+- "someone in the [industry] space"
+- "a contact who specializes in [area]"
+
+INCORRECT (NEVER use these):
+- "Mike at Google" (you don't know Mike exists)
+- "Sarah Chen at Hulu" (you made up this name)
+- "John Smith who scaled their platform to $100M" (you fabricated this)
+- ANY specific person name you don't have in context
+
+If you don't have a name, you don't have a name. Be generic and factual.
+
+Example CORRECT message:
+"Found a connection at Google who has experience with CTV advertising. Want me to reach out and see if they're open to an intro?"
+
+Example INCORRECT message:
+"Found Mike at Google who scaled their CTV platform to $100M revenue. Want me to connect you?" ← YOU MADE UP MIKE AND THE $100M!
+
+Remember: It's better to be vague than to hallucinate. Users trust you - don't break that trust.`;
+    } else {
+      // We have a name, but still remind to use it correctly
+      prompt += `\n\n📋 You have specific person information in the context. Use ONLY the details provided. Do not embellish, add extra context, or infer facts not explicitly stated in the data.`;
+    }
+  }
+
+  return prompt;
+}
+```
+
+**Testing:**
+- [ ] Test priority_opportunity with NO name → verify generic phrasing ("a connection at...")
+- [ ] Test priority_opportunity WITH name → verify uses ONLY provided name
+- [ ] Human review: 20 random priority_opportunity messages for hallucinations
+- [ ] Test with empty context_for_call_2 → verify falls back to safe generic
+- [ ] Test with malformed JSON context → verify graceful handling
+
+---
+
+### Phase 4: Future Optimizations (Post-Launch)
+
+**Goal:** Reduce costs, improve performance  
+**Timeline:** 1-2 hours  
+**Status:** Not Started  
+**Testing Checkpoint:** Measure cost savings, verify cache hit rates
+
+#### 4.1 Implement Prompt Caching
+
+**⚠️ CHECK FIRST:** Search for "cache_control" in both agent index.ts files
+
+**Files:**
+- `packages/agents/concierge/src/index.ts:205-211` (Call 2 in handleUserMessage)
+- `packages/agents/concierge/src/index.ts:385-391` (Call 2 in handleReengagement)
+- `packages/agents/innovator/src/index.ts:173-179` (Call 2 in handleUserMessage)
+- `packages/agents/innovator/src/index.ts:338-344` (Call 2 in handleReengagement)
+
+**Expected Savings:** 60-70% cost reduction on Call 2 (per spec 16.8.1)
+
+**Changes:**
+```typescript
+// Update system parameter to use cache_control blocks
+const response = await anthropic.messages.create({
+  model: 'claude-sonnet-4-20250514',
+  max_tokens: 500,
+  temperature: 0.7,
+  system: [
+    {
+      type: 'text',
+      text: CONCIERGE_PERSONALITY,  // Static personality - always cache
+      cache_control: { type: 'ephemeral' }
+    },
+    {
+      type: 'text',
+      text: scenarioGuidance,  // Semi-static scenario guidance - cache
+      cache_control: { type: 'ephemeral' }
+    },
+    {
+      type: 'text',
+      text: specificGuidanceForThisInvocation  // Dynamic per-invocation - don't cache
+    }
+  ],
+  messages: conversationMessages
+});
+```
+
+**Implementation Notes:**
+- Static content (personality, scenarios) goes in early blocks with cache_control
+- Dynamic content (specific guidance, tool results) goes in later blocks without cache
+- Anthropic caches based on exact content match, so order matters
+- Cache TTL is 5 minutes (ephemeral)
+
+**Testing:**
+- [ ] Deploy changes
+- [ ] Monitor cache hit rates in Anthropic dashboard
+- [ ] Measure cost reduction after 100+ calls
+- [ ] Verify cache invalidation works correctly (changed personality = new cache)
+
+---
+
+### Testing & Validation Plan
+
+#### After Phase 1 (Critical Fixes):
+- [ ] Run all existing Concierge tests: `cd packages/agents/concierge && npm test`
+- [ ] Run all existing Innovator tests: `cd packages/agents/innovator && npm test`
+- [ ] Manual test: Trigger JSON parse error (mock malformed LLM response)
+- [ ] Manual test: Select intro tool with invalid ID → verify graceful error
+- [ ] Manual test: User offers intro → verify tool executes correctly
+- [ ] Check logs for any new error patterns
+
+#### After Phase 2 (High Priority):
+- [ ] Test re-engagement scenarios with throttling
+- [ ] Verify system messages filtered correctly (check Call 2 input logs)
+- [ ] Test both Concierge and Innovator re-engagement flows
+- [ ] Verify Innovator re-engagement works without internal message injection
+
+#### After Phase 3 (Medium Priority):
+- [ ] Test message sequences with various delimiter formats
+- [ ] Test priority opportunities with NO names in context → verify generic phrasing
+- [ ] Test priority opportunities WITH names in context → verify uses provided names only
+- [ ] Review error logs for completeness and debugging utility
+- [ ] Human review: Sample 20 random Call 2 outputs for quality
+
+#### Before Production:
+- [ ] Integration test: System messages with `direction: 'inbound'` never trigger SMS webhook
+- [ ] Load test: 100 user interactions across both agents
+- [ ] Human review: 50 random Call 2 outputs for hallucinations (especially names)
+- [ ] Monitor re-engagement task creation (verify no infinite loops)
+- [ ] Check tool validation catches all invalid ID cases
+- [ ] Verify JSON parse errors return graceful fallbacks (no agent crashes)
+
+#### After Phase 4 (Prompt Caching):
+- [ ] Monitor cache hit rates for 24 hours
+- [ ] Calculate actual cost savings
+- [ ] Verify cache invalidation works when prompts change
+- [ ] Check response quality is identical with/without caching
+
+---
+
+### Progress Tracking
+
+**Phase 1 Status:** ✅ COMPLETED (October 22, 2025)
+- [x] 1.1 JSON Parse Error Handling - ✅ COMPLETED
+- [x] 1.2 Tool Naming Consistency - ✅ COMPLETED
+- [x] 1.3 Tool Parameter Validation - ✅ COMPLETED
+
+**Phase 2 Status:** ✅ PARTIALLY COMPLETED (October 22-24, 2025)
+- [ ] 2.1 Re-engagement Throttling - ⚠️ MOVED TO PHASE 3.5
+- [x] 2.2 Message History Filtering - ✅ COMPLETED
+- [x] 2.3 Remove Internal Message Injection - ✅ COMPLETED
+
+**Phase 3 Status:** ✅ COMPLETED (October 22-24, 2025)
+- [x] 3.1 Multi-Delimiter Support - ✅ COMPLETED
+- [x] 3.2 Enhanced Anti-Hallucination - ✅ COMPLETED (Previously Implemented - Verified)
+- [x] 3.3 Enhanced Error Logging - ✅ COMPLETED
+- [x] 3.4 Account Manager Intro Flow Prioritization - ✅ COMPLETED (October 24, 2025)
+- [x] 3.5 Re-engagement Throttling - ✅ COMPLETED (October 24, 2025)
+- [x] 3.6 Anti-Hallucination for Priority Opportunities - ✅ COMPLETED (Verified)
+
+**Phase 4 Status:** Not Started
+- [ ] 4.1 Prompt Caching - Not Started
+
+---
+
+### Open Questions & Decisions Needed
+
+1. ✅ **Tool naming (Phase 1.2):** Confirmed - standardize on `offer_introduction` - COMPLETED
+2. ✅ **Re-engagement throttling (Phase 2.1):** Implemented in agents (Concierge/Innovator), not task-processor - COMPLETED
+3. ✅ **Phase ordering:** Confirmed - Critical fixes → High priority → Medium → Future optimizations
+4. **Prompt Caching (Phase 4.1):** Awaiting metrics before implementation
+5. **Tool Results Structure:** Monitor during testing - enhance if needed for complex scenarios
+
+---
+
+### Notes & Learnings
+
+**October 24, 2025 - Phases 3.4-3.6 Implementation**
+
+1. **Account Manager Intro Flow Prioritization (Phase 3.4):**
+   - Created new module `intro-prioritization.ts` with scoring functions for all 3 intro flows
+   - Dynamic scoring based on multiple factors: bounty credits, vouching, connection strength, recency
+   - Increased top priorities from 5 to 10 to accommodate intro flows
+   - State transitions (pause/cancel) implemented for competing opportunities
+   - Integration point: Called from main `invokeAccountManagerAgent()` after LLM-based priority calculation
+
+2. **Re-engagement Throttling (Phase 3.5):**
+   - Implemented in agents (NOT task-processor) at start of `handleReengagement()` functions
+   - 7-day throttle: Checks `agent_actions_log` for recent `re_engagement_message_sent` events
+   - 3-strike pause: Checks for user responses after each attempt, pauses after 3 unanswered
+   - New action types: `re_engagement_throttled`, `re_engagement_paused`
+   - Both Concierge and Innovator have identical throttling logic (lines 333-456, 298-421 respectively)
+
+3. **Anti-Hallucination (Phase 3.6):**
+   - Already implemented in both agents' personality.ts files
+   - Checks for specific person names in context/toolResults before allowing priority_opportunity messages
+   - Provides explicit CORRECT/INCORRECT examples to prevent name fabrication
+   - No changes needed - verified existing implementation
+
+4. **Architectural Decision - Where to Implement Throttling:**
+   - Initially planned for task-processor, but implemented in agents instead
+   - Reasoning: Agents have access to full context (user, conversation, DB client) and can make more nuanced decisions
+   - Allows for graceful handling and detailed logging at the point of decision
+   - Task-processor remains simple (just routes tasks to agents)
+
+5. **Build Verification:**
+   - All modified packages compile successfully
+   - No TypeScript errors
+   - Pre-existing test package error unrelated to changes
+
+**Files Created:**
+- `packages/agents/account-manager/src/intro-prioritization.ts` (315 lines)
+
+**Files Modified:**
+- `packages/agents/account-manager/src/index.ts` - Added intro flow integration
+- `packages/agents/concierge/src/index.ts` - Added throttling to handleReengagement (123 lines added)
+- `packages/agents/innovator/src/index.ts` - Added throttling to handleReengagement (123 lines added)
+- `requirements.md` - Updated Account Manager section, Re-engagement section, Appendix Z statuses
 
 **END OF REQUIREMENTS DOCUMENT**

@@ -22,6 +22,7 @@ export type EventType =
   | 'user.message.received'
   | 'user.onboarding_step.completed'
   | 'user.verification.pending'
+  | 'user.onboarding_info_complete'
   | 'user.verified'
   | 'user.inquiry.solution_needed'
   | 'user.inquiry.detected'
@@ -45,8 +46,21 @@ export type EventType =
 
   // Intro Events
   | 'intro.opportunity_created'
+  | 'intro.opportunity_accepted'
+  | 'intro.opportunity_declined'
+  | 'intro.opportunity_completed'
+  | 'intro.opportunity_cancelled'
   | 'intro.accepted'
   | 'intro.completed'
+  | 'connection.request_created'
+  | 'connection.request_accepted'
+  | 'connection.request_declined'
+  | 'connection.request_completed'
+  | 'intro.offer_created'
+  | 'intro.offer_accepted'
+  | 'intro.offer_declined'
+  | 'intro.offer_confirmed'
+  | 'intro.offer_reminder'
 
   // Priority Events
   | 'priority.intro_added'
@@ -167,6 +181,15 @@ export interface UserVerificationPendingPayload {
   userId: string;
   verificationType: 'email' | 'linkedin' | 'both';
   verificationEmail?: string;
+}
+
+/**
+ * Payload for user.onboarding_info_complete event.
+ * Indicates all onboarding information collected and email verified (ready for manual approval).
+ */
+export interface UserOnboardingInfoCompletePayload {
+  onboarding_completed_at: string;
+  ready_for_manual_approval: boolean;
 }
 
 /**
@@ -663,6 +686,7 @@ export interface EventTypePayloadMap {
   'user.message.received': UserMessageReceivedPayload;
   'user.onboarding_step.completed': UserOnboardingStepCompletedPayload;
   'user.verification.pending': UserVerificationPendingPayload;
+  'user.onboarding_info_complete': UserOnboardingInfoCompletePayload;
   'user.verified': UserVerifiedPayload;
   'user.inquiry.solution_needed': UserInquirySolutionNeededPayload;
   'user.inquiry.detected': UserInquiryDetectedPayload;
@@ -680,8 +704,21 @@ export interface EventTypePayloadMap {
   'community.expert_notified_of_impact': CommunityExpertNotifiedOfImpactPayload;
   'community.no_experts_found': CommunityNoExpertsFoundPayload;
   'intro.opportunity_created': IntroOpportunityCreatedPayload;
+  'intro.opportunity_accepted': Record<string, unknown>;
+  'intro.opportunity_declined': Record<string, unknown>;
+  'intro.opportunity_completed': Record<string, unknown>;
+  'intro.opportunity_cancelled': Record<string, unknown>;
   'intro.accepted': IntroAcceptedPayload;
   'intro.completed': IntroCompletedPayload;
+  'connection.request_created': Record<string, unknown>;
+  'connection.request_accepted': Record<string, unknown>;
+  'connection.request_declined': Record<string, unknown>;
+  'connection.request_completed': Record<string, unknown>;
+  'intro.offer_created': Record<string, unknown>;
+  'intro.offer_accepted': Record<string, unknown>;
+  'intro.offer_declined': Record<string, unknown>;
+  'intro.offer_confirmed': Record<string, unknown>;
+  'intro.offer_reminder': Record<string, unknown>;
   'priority.intro_added': PriorityIntroAddedPayload;
   'message.send.requested': MessageSendRequestedPayload;
   'message.ready_to_send': MessageReadyToSendPayload;

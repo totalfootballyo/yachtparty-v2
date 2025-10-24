@@ -18,6 +18,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   createServiceClient,
   publishEvent,
@@ -40,6 +41,43 @@ import {
 import { buildPersonalityPrompt } from './personality';
 
 /**
+ * Parse message sequences with support for multiple delimiter patterns.
+ * LLM might use various formats, so we try them all.
+ *
+ * @param rawTexts - Raw text blocks from LLM response
+ * @returns Array of individual message strings
+ */
+function parseMessageSequences(rawTexts: string[]): string[] {
+  const delimiters = [
+    /\n---\n/,        // Standard (current)
+    /\n--- \n/,       // With trailing space
+    / ---\n/,         // With leading space
+    /\n — — — \n/,    // Em dashes
+    /\n___\n/,        // Underscores
+    /\n===\n/,        // Equal signs
+    /^---$/m,         // Just three dashes on own line (multiline mode)
+  ];
+
+  let messages = rawTexts;
+
+  // Try each delimiter - some text might have multiple types
+  for (const delimiter of delimiters) {
+    messages = messages.flatMap((msg) =>
+      msg.split(delimiter).map((m) => m.trim()).filter((m) => m.length > 0)
+    );
+  }
+
+  // If we ended up with more than 10 messages, something went wrong
+  // (probably split on common punctuation). Fall back to original.
+  if (messages.length > 10) {
+    console.warn('[Message Parsing] Too many splits, falling back to original:', messages.length);
+    return rawTexts.map((t) => t.trim()).filter((t) => t.length > 0);
+  }
+
+  return messages;
+}
+
+/**
  * Main entry point for Concierge Agent.
  *
  * Processes user messages using 2-LLM sequential architecture.
@@ -47,12 +85,14 @@ import { buildPersonalityPrompt } from './personality';
  * @param message - Inbound user message
  * @param user - User record
  * @param conversation - Active conversation
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns Agent response with actions and/or immediate reply
  */
 export async function invokeConciergeAgent(
   message: Message,
   user: User,
-  conversation: Conversation
+  conversation: Conversation,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<AgentResponse> {
   const startTime = Date.now();
 
@@ -69,7 +109,7 @@ export async function invokeConciergeAgent(
         messageContent: message.content,
         messageRole: message.role,
       },
-    });
+    }, dbClient);
 
     // Detect message type and route appropriately
     const isReengagement = message.role === 'system' &&
@@ -77,10 +117,10 @@ export async function invokeConciergeAgent(
 
     if (message.role === 'user') {
       // Week 2: User messages with 2-LLM pattern
-      return await handleUserMessage(message, user, conversation, startTime);
+      return await handleUserMessage(message, user, conversation, startTime, dbClient);
     } else if (isReengagement) {
       // Week 3: Re-engagement with social judgment
-      return await handleReengagement(message, user, conversation, startTime);
+      return await handleReengagement(message, user, conversation, startTime, dbClient);
     } else {
       // Week 4: System triggers (solution updates, priority notifications, etc.)
       console.log(`[Concierge] System message received (not re-engagement). Returning fallback.`);
@@ -91,18 +131,34 @@ export async function invokeConciergeAgent(
       };
     }
   } catch (error) {
-    console.error('Concierge Agent Error:', error);
+    console.error('[Concierge Agent Error]:', error);
 
-    // Log error
+    // Enhanced error logging with full context
     await logAgentAction({
       agentType: 'concierge',
-      actionType: 'agent_invocation',
+      actionType: 'agent_invocation_error',
       userId: user.id,
       contextId: conversation.id,
       contextType: 'conversation',
+      inputData: {
+        messageContent: message.content,
+        messageRole: message.role,
+        messageId: message.id,
+        timestamp: new Date().toISOString(),
+        isReengagement: message.role === 'system' &&
+          message.content.includes('"type":"re_engagement_check"'),
+      },
+      outputData: {
+        // Error context
+        errorContext: {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+        },
+      },
       error: error instanceof Error ? error.message : String(error),
       latencyMs: Date.now() - startTime,
-    });
+    }, dbClient);
 
     // Return graceful fallback
     return {
@@ -122,14 +178,15 @@ async function handleUserMessage(
   message: Message,
   user: User,
   conversation: Conversation,
-  startTime: number
+  startTime: number,
+  dbClient: SupabaseClient
 ): Promise<AgentResponse> {
   const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
   });
 
   // Step 1: Load context fresh from database
-  const context = await loadAgentContext(user.id, conversation.id);
+  const context = await loadAgentContext(user.id, conversation.id, 5, dbClient);
   const conciergeContext: ConciergeContext = {
     recentMessages: context.recentMessages,
     userPriorities: context.userPriorities,
@@ -156,7 +213,7 @@ async function handleUserMessage(
   for (const toolDef of decision.tools_to_execute) {
     console.log(`[Concierge 2-LLM] Executing tool: ${toolDef.tool_name}`);
 
-    const result = await executeTool(toolDef, user, conversation, context);
+    const result = await executeTool(toolDef, user, conversation, context, dbClient);
 
     // Collect actions from tool execution
     if (result.actions) {
@@ -187,11 +244,28 @@ async function handleUserMessage(
     toolResults
   );
 
-  // Build message history for Call 2 (same as Call 1 for continuity and self-reflection)
-  const conversationMessages = context.recentMessages.map(m => ({
-    role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
-    content: m.content
-  }));
+  // Build message history for Call 2 (filter out internal system messages)
+  const conversationMessages = context.recentMessages
+    .filter((msg) => {
+      // Always include user messages
+      if (msg.role === 'user') return true;
+
+      // Always include agent's own messages for self-reflection
+      if (msg.role === 'concierge') return true;
+
+      // Include system messages that were sent to user (outbound)
+      // Exclude internal system messages (inbound triggers like re-engagement)
+      if (msg.role === 'system') {
+        return msg.direction === 'outbound';
+      }
+
+      // Exclude everything else
+      return false;
+    })
+    .map((m) => ({
+      role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+      content: m.content,
+    }));
 
   conversationMessages.push({
     role: 'user',
@@ -206,12 +280,10 @@ async function handleUserMessage(
     messages: conversationMessages
   });
 
-  // Step 5: Parse message sequences (split by "---" delimiter)
+  // Step 5: Parse message sequences (supports multiple delimiter patterns)
   const textBlocks = response.content.filter((block) => block.type === 'text');
   const rawTexts = textBlocks.map(block => 'text' in block ? block.text.trim() : '').filter(t => t.length > 0);
-  const messageTexts = rawTexts.flatMap(text =>
-    text.split(/\n---\n/).map(msg => msg.trim()).filter(msg => msg.length > 0)
-  );
+  const messageTexts = parseMessageSequences(rawTexts);
 
   console.log(`[Concierge 2-LLM] Call 2 Output: ${messageTexts.length} message(s)`);
 
@@ -229,7 +301,7 @@ async function handleUserMessage(
       scenario: decision.next_scenario,
     },
     latencyMs: Date.now() - startTime,
-  });
+  }, dbClient);
 
   return {
     immediateReply: messageTexts.length > 0,
@@ -251,11 +323,137 @@ async function handleReengagement(
   message: Message,
   user: User,
   conversation: Conversation,
-  startTime: number
+  startTime: number,
+  dbClient: SupabaseClient
 ): Promise<AgentResponse> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   console.log(`[Concierge Re-engagement] Starting re-engagement check for user ${user.id}`);
+
+  // ========================================================================
+  // THROTTLING CHECKS - Prevent spam
+  // ========================================================================
+
+  // Check 1: No re-engagement in last 7 days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const { data: recentAttempts } = await dbClient
+    .from('agent_actions_log')
+    .select('created_at')
+    .eq('user_id', user.id)
+    .eq('action_type', 're_engagement_message_sent')
+    .gte('created_at', sevenDaysAgo.toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (recentAttempts && recentAttempts.length > 0) {
+    const lastAttemptDate = new Date(recentAttempts[0].created_at);
+    const daysSinceLastAttempt = (Date.now() - lastAttemptDate.getTime()) / (1000 * 60 * 60 * 24);
+
+    console.log(`[Concierge Re-engagement] Throttled: Last re-engagement was ${daysSinceLastAttempt.toFixed(1)} days ago`);
+
+    // Extend task by remaining days to reach 7 days
+    const extendDays = Math.ceil(7 - daysSinceLastAttempt);
+    const scheduledFor = new Date();
+    scheduledFor.setDate(scheduledFor.getDate() + extendDays);
+
+    await createAgentTask({
+      task_type: 're_engagement_check',
+      agent_type: 'concierge',
+      user_id: user.id,
+      context_id: conversation.id,
+      context_type: 'conversation',
+      scheduled_for: scheduledFor.toISOString(),
+      priority: 'low',
+      context_json: {
+        throttled: true,
+        throttledReason: '7_day_limit',
+        lastAttemptDate: lastAttemptDate.toISOString(),
+      },
+      created_by: 'concierge_agent',
+    }, dbClient);
+
+    await logAgentAction({
+      agentType: 'concierge',
+      actionType: 're_engagement_throttled',
+      userId: user.id,
+      contextId: conversation.id,
+      contextType: 'conversation',
+      outputData: {
+        throttledReason: '7_day_limit',
+        lastAttemptDate: lastAttemptDate.toISOString(),
+        extendDays,
+      },
+      latencyMs: Date.now() - startTime,
+    }, dbClient);
+
+    return {
+      immediateReply: false,
+      messages: [],
+      actions: [],
+    };
+  }
+
+  // Check 2: No more than 3 unanswered attempts in 90 days
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const { data: allAttempts } = await dbClient
+    .from('agent_actions_log')
+    .select('created_at')
+    .eq('user_id', user.id)
+    .eq('action_type', 're_engagement_message_sent')
+    .gte('created_at', ninetyDaysAgo.toISOString())
+    .order('created_at', { ascending: false });
+
+  let unansweredCount = 0;
+  for (const attempt of (allAttempts || [])) {
+    const attemptDate = new Date(attempt.created_at);
+
+    // Check if user responded after this attempt
+    const { data: userResponses } = await dbClient
+      .from('messages')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('role', 'user')
+      .gte('created_at', attemptDate.toISOString())
+      .limit(1);
+
+    if (!userResponses || userResponses.length === 0) {
+      unansweredCount++;
+    } else {
+      // User responded - reset counter
+      break;
+    }
+  }
+
+  if (unansweredCount >= 3) {
+    console.log(`[Concierge Re-engagement] Paused: User has not responded to ${unansweredCount} attempts in 90 days`);
+
+    await logAgentAction({
+      agentType: 'concierge',
+      actionType: 're_engagement_paused',
+      userId: user.id,
+      contextId: conversation.id,
+      contextType: 'conversation',
+      outputData: {
+        pausedReason: 'too_many_unanswered_attempts',
+        unansweredCount,
+        requiresManualOverride: true,
+      },
+      latencyMs: Date.now() - startTime,
+    }, dbClient);
+
+    // Don't create new task - paused until manual override
+    return {
+      immediateReply: false,
+      messages: [],
+      actions: [],
+    };
+  }
+
+  console.log(`[Concierge Re-engagement] Throttling checks passed (${unansweredCount} unanswered in 90 days)`);
+
+  // ========================================================================
+  // END THROTTLING CHECKS - Continue with normal re-engagement flow
+  // ========================================================================
 
   // Parse re-engagement context from system message
   const reengagementContext = JSON.parse(message.content);
@@ -266,7 +464,7 @@ async function handleReengagement(
   console.log(`[Concierge Re-engagement] Context: ${daysSinceLastMessage} days, ${priorityCount} priorities, goals: ${hasActiveGoals}`);
 
   // Step 1: Load FULL context for re-engagement (15-20 messages)
-  const context = await loadAgentContext(user.id, conversation.id, 20); // More messages for social judgment
+  const context = await loadAgentContext(user.id, conversation.id, 20, dbClient); // More messages for social judgment
 
   const conciergeContext: ConciergeContext = {
     recentMessages: context.recentMessages,
@@ -314,7 +512,7 @@ async function handleReengagement(
         reason: decision.reasoning,
       },
       created_by: 'concierge_agent',
-    });
+    }, dbClient);
 
     // Log the decision
     await logAgentAction({
@@ -330,7 +528,7 @@ async function handleReengagement(
         priorityCount,
       },
       latencyMs: Date.now() - startTime,
-    });
+    }, dbClient);
 
     return {
       immediateReply: false,
@@ -345,7 +543,7 @@ async function handleReengagement(
 
   for (const toolDef of decision.tools_to_execute || []) {
     console.log(`[Concierge Re-engagement] Executing tool: ${toolDef.tool_name}`);
-    const result = await executeTool(toolDef, user, conversation, context);
+    const result = await executeTool(toolDef, user, conversation, context, dbClient);
 
     if (result.actions) {
       actions.push(...result.actions);
@@ -371,11 +569,28 @@ async function handleReengagement(
     toolResults
   );
 
-  // Build message history for Call 2 (same messages for self-reflection)
-  const conversationMessages = context.recentMessages.map(m => ({
-    role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
-    content: m.content
-  }));
+  // Build message history for Call 2 (filter out internal system messages)
+  const conversationMessages = context.recentMessages
+    .filter((msg) => {
+      // Always include user messages
+      if (msg.role === 'user') return true;
+
+      // Always include agent's own messages for self-reflection
+      if (msg.role === 'concierge') return true;
+
+      // Include system messages that were sent to user (outbound)
+      // Exclude internal system messages (inbound triggers like re-engagement)
+      if (msg.role === 'system') {
+        return msg.direction === 'outbound';
+      }
+
+      // Exclude everything else
+      return false;
+    })
+    .map((m) => ({
+      role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+      content: m.content,
+    }));
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -385,13 +600,10 @@ async function handleReengagement(
     messages: conversationMessages
   });
 
-  // Step 6: Parse message sequences
+  // Step 6: Parse message sequences (supports multiple delimiter patterns)
   const textBlocks = response.content.filter(block => block.type === 'text');
   const rawTexts = textBlocks.map(block => 'text' in block ? block.text.trim() : '').filter(t => t.length > 0);
-
-  const messageTexts = rawTexts.flatMap(text =>
-    text.split(/\n---\n/).map(msg => msg.trim()).filter(msg => msg.length > 0)
-  );
+  const messageTexts = parseMessageSequences(rawTexts);
 
   console.log(`[Concierge Re-engagement] Call 2 Output: ${messageTexts.length} message(s)`);
 
@@ -409,13 +621,77 @@ async function handleReengagement(
       daysSinceLastMessage,
     },
     latencyMs: Date.now() - startTime,
-  });
+  }, dbClient);
 
   return {
     immediateReply: messageTexts.length > 0,
     messages: messageTexts,
     actions,
   };
+}
+
+/**
+ * Validate tool parameters before execution
+ * Returns error if required IDs don't exist in context
+ */
+function validateToolParams(
+  toolName: string,
+  params: Record<string, any>,
+  context: {
+    userPriorities?: Array<{
+      id: string;
+      item_type: string;
+      item_id: string;
+      status: string;
+    }>;
+    outstandingCommunityRequests?: Array<{
+      id: string;
+      question: string;
+      created_at: string;
+    }>;
+    lastPresentedCommunityRequest?: {
+      requestId: string;
+      question: string;
+      presentedAt: string;
+    };
+  }
+): { valid: boolean; error?: string } {
+  switch (toolName) {
+    case 'accept_intro_opportunity':
+    case 'decline_intro_opportunity':
+      const introOppExists = context.userPriorities?.some(
+        (p) => p.item_id === params.intro_opportunity_id && p.item_type === 'intro_opportunity'
+      );
+      if (!introOppExists) {
+        return {
+          valid: false,
+          error: `intro_opportunity ${params.intro_opportunity_id} not found in user priorities`,
+        };
+      }
+      break;
+
+    case 'record_community_response':
+      if (!params.request_id) {
+        return { valid: false, error: 'request_id required for record_community_response' };
+      }
+      // Check if this request was presented to user
+      if (context.lastPresentedCommunityRequest?.requestId !== params.request_id) {
+        // Also check outstanding requests
+        const requestExists = context.outstandingCommunityRequests?.some((r) => r.id === params.request_id);
+        if (!requestExists) {
+          return {
+            valid: false,
+            error: `community_request ${params.request_id} not found in context`,
+          };
+        }
+      }
+      break;
+
+    // Note: accept_intro_offer, decline_intro_offer, etc. would need DB checks
+    // For now, let DB handle those (existing error logging is ok)
+  }
+
+  return { valid: true };
 }
 
 /**
@@ -434,16 +710,31 @@ async function executeTool(
       question: string;
       presentedAt: string;
     };
-  }
+  },
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<{
   actions?: AgentAction[];
   requestId?: string;
   introId?: string;
   researchId?: string;
   responseId?: string;
+  error?: string;
+  errorType?: string;
 }> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
   const input = toolDef.params;
+
+  // VALIDATE PARAMETERS BEFORE EXECUTION
+  const validation = validateToolParams(toolDef.tool_name, toolDef.params, context);
+  if (!validation.valid) {
+    console.error(`[Tool Validation Failed] ${toolDef.tool_name}:`, validation.error);
+
+    return {
+      actions: [],
+      error: validation.error,
+      errorType: 'validation_failed',
+    };
+  }
 
   switch (toolDef.tool_name) {
     case 'publish_community_request': {
@@ -465,7 +756,7 @@ async function executeTool(
           requestSummary: input.request_summary,
         },
         created_by: 'concierge_agent',
-      });
+      }, dbClient);
 
       const action: AgentAction = {
         type: 'ask_community_question',
@@ -499,7 +790,7 @@ async function executeTool(
           urgency: input.urgency || 'medium',
         },
         created_by: 'concierge_agent',
-      });
+      }, dbClient);
 
       const action: AgentAction = {
         type: 'request_solution_research',
@@ -516,36 +807,247 @@ async function executeTool(
       };
     }
 
-    case 'create_intro_opportunity': {
-      // Publish event for Account Manager
-      await publishEvent({
-        event_type: 'user.intro_inquiry',
-        aggregate_id: user.id,
-        aggregate_type: 'user',
-        payload: {
-          userId: user.id,
-          conversationId: conversation.id,
-          prospectName: input.prospect_name,
-          prospectCompany: input.prospect_company,
-          reason: input.reason,
-        },
-        created_by: 'concierge_agent',
-      });
+    case 'offer_introduction': {
+      // User spontaneously offers to introduce prospect to introducee
+      const { data: introOffer, error } = await supabase
+        .from('intro_offers')
+        .insert({
+          offering_user_id: user.id,
+          introducee_user_id: input.introducee_user_id,
+          prospect_name: input.prospect_name,
+          prospect_company: input.prospect_company || null,
+          prospect_title: input.prospect_title || null,
+          prospect_context: input.prospect_context || null,
+          context_type: input.context_type || 'conversation',
+          context_id: input.context_id || conversation.id,
+          bounty_credits: 0, // Set when introducee accepts
+          status: 'pending_introducee_response',
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating intro offer:', error);
+        return {};
+      }
 
       const action: AgentAction = {
-        type: 'create_intro_opportunity',
+        type: 'offer_introduction',
         params: {
-          prospectName: input.prospect_name,
-          prospectCompany: input.prospect_company,
-          reason: input.reason,
+          intro_offer_id: introOffer.id,
+          prospect_name: input.prospect_name,
+          introducee_user_id: input.introducee_user_id,
         },
-        reason: 'User requested introduction',
+        reason: 'User offered to make introduction',
       };
 
       return {
         actions: [action],
-        introId: 'pending', // Will be created by event handler
+        introId: introOffer.id,
       };
+    }
+
+    case 'accept_intro_opportunity': {
+      // User accepts an intro opportunity from their priorities
+      const { data: introOpp, error } = await supabase
+        .from('intro_opportunities')
+        .update({ status: 'accepted', connector_response: 'Accepted' })
+        .eq('id', input.intro_opportunity_id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error accepting intro opportunity:', error);
+        return {};
+      }
+
+      const action: AgentAction = {
+        type: 'accept_intro_opportunity',
+        params: { intro_opportunity_id: input.intro_opportunity_id },
+        reason: 'User accepted intro opportunity',
+      };
+
+      return { actions: [action] };
+    }
+
+    case 'decline_intro_opportunity': {
+      // User declines an intro opportunity
+      const { data: introOpp, error } = await supabase
+        .from('intro_opportunities')
+        .update({
+          status: 'rejected',
+          connector_response: input.reason || 'Declined',
+        })
+        .eq('id', input.intro_opportunity_id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error declining intro opportunity:', error);
+        return {};
+      }
+
+      const action: AgentAction = {
+        type: 'decline_intro_opportunity',
+        params: {
+          intro_opportunity_id: input.intro_opportunity_id,
+          reason: input.reason,
+        },
+        reason: 'User declined intro opportunity',
+      };
+
+      return { actions: [action] };
+    }
+
+    case 'accept_intro_offer': {
+      // Introducee accepts intro offer - set bounty based on innovator status
+      const { data: introOffer } = await supabase
+        .from('intro_offers')
+        .select('*, introducee:introducee_user_id(id)')
+        .eq('id', input.intro_offer_id)
+        .single();
+
+      if (!introOffer) {
+        console.error(`Intro offer ${input.intro_offer_id} not found`);
+        return {};
+      }
+
+      // Query innovator's warm_intro_bounty if introducee is an innovator
+      const { data: innovator } = await supabase
+        .from('innovators')
+        .select('warm_intro_bounty')
+        .eq('user_id', introOffer.introducee_user_id)
+        .single();
+
+      const bountyCredits = innovator ? innovator.warm_intro_bounty : 0;
+
+      const { error } = await supabase
+        .from('intro_offers')
+        .update({
+          status: 'pending_connector_confirmation',
+          introducee_response: 'Accepted',
+          bounty_credits: bountyCredits,
+        })
+        .eq('id', input.intro_offer_id);
+
+      if (error) {
+        console.error('Error accepting intro offer:', error);
+        return {};
+      }
+
+      const action: AgentAction = {
+        type: 'accept_intro_offer',
+        params: {
+          intro_offer_id: input.intro_offer_id,
+          bounty_credits: bountyCredits,
+        },
+        reason: 'User accepted intro offer',
+      };
+
+      return { actions: [action] };
+    }
+
+    case 'decline_intro_offer': {
+      // Introducee declines intro offer
+      const { error } = await supabase
+        .from('intro_offers')
+        .update({
+          status: 'declined',
+          introducee_response: input.reason || 'Declined',
+        })
+        .eq('id', input.intro_offer_id);
+
+      if (error) {
+        console.error('Error declining intro offer:', error);
+        return {};
+      }
+
+      const action: AgentAction = {
+        type: 'decline_intro_offer',
+        params: {
+          intro_offer_id: input.intro_offer_id,
+          reason: input.reason,
+        },
+        reason: 'User declined intro offer',
+      };
+
+      return { actions: [action] };
+    }
+
+    case 'confirm_intro_offer': {
+      // Connector confirms they completed the intro
+      const { error } = await supabase
+        .from('intro_offers')
+        .update({
+          status: 'completed',
+          connector_confirmation: 'Confirmed',
+          intro_completed_at: new Date().toISOString(),
+        })
+        .eq('id', input.intro_offer_id);
+
+      if (error) {
+        console.error('Error confirming intro offer:', error);
+        return {};
+      }
+
+      const action: AgentAction = {
+        type: 'confirm_intro_offer',
+        params: { intro_offer_id: input.intro_offer_id },
+        reason: 'User confirmed intro completion',
+      };
+
+      return { actions: [action] };
+    }
+
+    case 'accept_connection_request': {
+      // User accepts a connection request
+      const { error } = await supabase
+        .from('connection_requests')
+        .update({
+          status: 'accepted',
+          introducee_response: 'Accepted',
+        })
+        .eq('id', input.connection_request_id);
+
+      if (error) {
+        console.error('Error accepting connection request:', error);
+        return {};
+      }
+
+      const action: AgentAction = {
+        type: 'accept_connection_request',
+        params: { connection_request_id: input.connection_request_id },
+        reason: 'User accepted connection request',
+      };
+
+      return { actions: [action] };
+    }
+
+    case 'decline_connection_request': {
+      // User declines a connection request
+      const { error } = await supabase
+        .from('connection_requests')
+        .update({
+          status: 'declined',
+          introducee_response: input.reason || 'Declined',
+        })
+        .eq('id', input.connection_request_id);
+
+      if (error) {
+        console.error('Error declining connection request:', error);
+        return {};
+      }
+
+      const action: AgentAction = {
+        type: 'decline_connection_request',
+        params: {
+          connection_request_id: input.connection_request_id,
+          reason: input.reason,
+        },
+        reason: 'User declined connection request',
+      };
+
+      return { actions: [action] };
     }
 
     case 'store_user_goal': {
@@ -609,7 +1111,7 @@ Return JSON:
           within_scope: isWithinScope,
         },
         created_by: 'concierge_agent',
-      });
+      }, dbClient);
 
       const action: AgentAction = {
         type: 'store_user_goal',
@@ -718,7 +1220,7 @@ Be concise and capture the key insight.`;
           responseSummary,
         },
         created_by: 'concierge_agent',
-      });
+      }, dbClient);
 
       const action: AgentAction = {
         type: 'record_community_response',
@@ -748,7 +1250,8 @@ Be concise and capture the key insight.`;
 async function loadAgentContext(
   userId: string,
   conversationId: string,
-  messageLimit: number = 5 // Default to 5 for user messages, override for re-engagement
+  messageLimit: number = 5, // Default to 5 for user messages, override for re-engagement
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<{
   recentMessages: Message[];
   conversationSummary?: string;
@@ -760,7 +1263,7 @@ async function loadAgentContext(
     presentedAt: string;
   };
 }> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   // Load recent messages (5 for user messages, 15-20 for re-engagement)
   const { data: messages } = await supabase
@@ -853,8 +1356,8 @@ async function logAgentAction(data: {
   outputData?: any;
   error?: string;
   latencyMs?: number;
-}): Promise<void> {
-  const supabase = createServiceClient();
+}, dbClient: SupabaseClient = createServiceClient()): Promise<void> {
+  const supabase = dbClient;
 
   await supabase.from('agent_actions_log').insert({
     agent_type: data.agentType,

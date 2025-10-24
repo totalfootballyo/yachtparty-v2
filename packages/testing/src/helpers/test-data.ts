@@ -51,6 +51,9 @@ export function createTestUser(overrides?: Partial<User>): User {
     company: overrides?.company || null,
     title: overrides?.title || null,
     linkedin_url: overrides?.linkedin_url || null,
+    email_verified: overrides?.email_verified ?? false,
+    referred_by: overrides?.referred_by || null,
+    name_dropped: overrides?.name_dropped || null,
     verified: overrides?.verified ?? false,
     innovator: overrides?.innovator ?? false,
     expert_connector: overrides?.expert_connector ?? false,
@@ -141,7 +144,7 @@ export function createTestEvent(overrides?: Partial<Event>): Event {
     metadata: overrides?.metadata || null,
     processed: overrides?.processed ?? false,
     version: overrides?.version ?? 1,
-    created_at: overrides?.created_at || new Date().toISOString(),
+    created_at: overrides?.created_at || new Date(),
     created_by: overrides?.created_by || 'test-agent',
   };
 }
@@ -186,7 +189,7 @@ export function createTestUserPriority(
     item_id: overrides?.item_id || generateId(),
     value_score: overrides?.value_score ?? 80,
     status: overrides?.status || 'active',
-    created_at: overrides?.created_at || new Date().toISOString(),
+    created_at: overrides?.created_at || new Date(),
     expires_at: overrides?.expires_at || null,
     presented_at: overrides?.presented_at || null,
   };

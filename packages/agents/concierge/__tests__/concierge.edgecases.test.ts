@@ -31,7 +31,7 @@ jest.mock('@yachtparty/shared', () => {
     ...actual,
     createServiceClient: jest.fn(),
     publishEvent: jest.fn().mockResolvedValue(undefined),
-    createAgentTask: jest.fn().mockResolvedValue(undefined),
+    createAgentTask: jest.fn().mockResolvedValue({ id: 'task-123' }),
   };
 });
 

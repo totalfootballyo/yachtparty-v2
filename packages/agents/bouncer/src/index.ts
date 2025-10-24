@@ -16,6 +16,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/messages';
 import { createServiceClient } from '@yachtparty/shared';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   User,
   Conversation,
@@ -82,6 +83,7 @@ interface BouncerContext {
   conversation: Conversation;
   recentMessages: Message[];
   progress: OnboardingProgress;
+  dbClient: SupabaseClient;
 }
 
 /**
@@ -93,43 +95,44 @@ interface BouncerContext {
  * @param message - The incoming message from user
  * @param user - User record
  * @param conversation - Conversation record
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns Agent response with actions to take
  */
 export async function invokeBouncerAgent(
   message: Message,
   user: User,
-  conversation: Conversation
+  conversation: Conversation,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<AgentResponse> {
   const startTime = Date.now();
 
   try {
     // Load context
-    const context = await loadContext(user, conversation);
+    const context = await loadBouncerContext(user, conversation, dbClient);
 
     // Check if this is a special task invocation
     const isSystemTask = message.role === 'system';
-    const isEmailVerifiedAcknowledgment = isSystemTask && context.user.email_verified && message.content?.includes('email_verified');
 
     // Parse re-engagement context if present
     let reengagementContext: any = null;
-    if (isSystemTask && !isEmailVerifiedAcknowledgment) {
+    if (isSystemTask) {
       try {
         const parsed = JSON.parse(message.content);
         if (parsed.type === 're_engagement_check') {
           reengagementContext = parsed;
         }
       } catch (e) {
-        // Not JSON or not re-engagement, continue
+        // Not JSON or not re-engagement
+        // Could be email_verified_acknowledgment or other system message
+        // Let it fall through to normal handling
       }
     }
 
     let response: AgentResponse;
 
-    if (isEmailVerifiedAcknowledgment) {
-      response = await handleEmailVerifiedAcknowledgment(context);
-    } else if (reengagementContext) {
+    if (reengagementContext) {
       response = await handleReengagement(context, reengagementContext);
-    } else if (isSystemTask) {
+    } else if (isSystemTask && message.content !== 'email_verified_acknowledgment') {
       // Unknown system task - ignore it and don't respond
       console.log(`⚠️  Unknown system task for user ${user.id}, message content: ${message.content}`);
       return {
@@ -139,6 +142,7 @@ export async function invokeBouncerAgent(
         reasoning: 'Unknown system task, no action taken'
       };
     } else {
+      // Handle normal user messages AND email_verified_acknowledgment through 2-LLM flow
       response = await handleUserMessage(context, message);
     }
 
@@ -158,7 +162,7 @@ export async function invokeBouncerAgent(
         actions_count: response.actions.length,
         events_count: response.events?.length || 0
       }
-    });
+    }, dbClient);
 
     return response;
   } catch (error) {
@@ -174,7 +178,7 @@ export async function invokeBouncerAgent(
         message_content: message.content
       },
       error: error instanceof Error ? error.message : String(error)
-    });
+    }, dbClient);
 
     throw error;
   }
@@ -186,11 +190,12 @@ export async function invokeBouncerAgent(
  * This function is called on every invocation to ensure we have
  * the latest state from the database.
  */
-async function loadContext(
+async function loadBouncerContext(
   user: User,
-  conversation: Conversation
+  conversation: Conversation,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<BouncerContext> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   // Load recent messages (last 20)
   const { data: messages, error } = await supabase
@@ -213,7 +218,8 @@ async function loadContext(
     user,
     conversation,
     recentMessages,
-    progress
+    progress,
+    dbClient
   };
 }
 
@@ -227,10 +233,10 @@ async function handleReengagement(
   const actions: AgentAction[] = [];
   const events: AgentEvent[] = [];
 
-  // Build conversation history (last 10-15 messages for re-engagement - need more context)
+  // Build conversation history (last 25 messages for re-engagement - need full context)
   const conversationMessages = context.recentMessages
     .filter(msg => msg.role !== 'system')
-    .slice(-15)
+    .slice(-25)
     .map(msg => ({
       role: msg.role === 'user' ? 'user' : 'assistant' as 'user' | 'assistant',
       content: msg.content
@@ -270,6 +276,7 @@ async function handleReengagement(
     tools_to_use: Array<{ tool_name: string; tool_input: any }>;
     next_scenario: string;
     context_for_response: string;
+    secondary_context?: Array<{ topic: string; suggested_response?: string }>;
   };
 
   console.log(`[2-LLM] Re-engagement decision: ${decision.next_scenario}, tools: ${decision.tools_to_use.length}`);
@@ -297,7 +304,7 @@ async function handleReengagement(
   }
 
   // Reload user state after tool execution
-  const supabase = createServiceClient();
+  const supabase = context.dbClient;
   const { data: updatedUser } = await supabase
     .from('users')
     .select('*')
@@ -351,7 +358,8 @@ async function handleReengagement(
       context.user.id,
       context.conversation.id,
       context.progress.currentStep,
-      context.progress.missingFields
+      context.progress.missingFields,
+      context.dbClient
     );
 
     actions.push({
@@ -384,9 +392,9 @@ async function handleUserMessage(
   const actions: AgentAction[] = [];
   const events: AgentEvent[] = [];
 
-  // Build conversation history (last 5 messages for user message handling)
+  // Build conversation history (last 25 messages for user message handling)
   const conversationMessages = context.recentMessages
-    .slice(-5)
+    .slice(-25)
     .map(msg => ({
       role: msg.role === 'user' ? 'user' : 'assistant' as 'user' | 'assistant',
       content: msg.content
@@ -426,7 +434,18 @@ async function handleUserMessage(
     tools_to_use: Array<{ tool_name: string; tool_input: any }>;
     next_scenario: string;
     context_for_response: string;
+    secondary_context?: Array<{ topic: string; suggested_response?: string }>;
   };
+
+  // CRITICAL: Enforce tool/scenario coupling at code level
+  // If scenario is request_email_verification, MUST include send_verification_email tool
+  if (decision.next_scenario === 'request_email_verification') {
+    const hasSendVerificationEmail = decision.tools_to_use.some(t => t.tool_name === 'send_verification_email');
+    if (!hasSendVerificationEmail) {
+      console.log(`[2-LLM] WARNING: Call 1 chose request_email_verification but didn't include send_verification_email tool - adding it automatically`);
+      decision.tools_to_use.push({ tool_name: 'send_verification_email', tool_input: {} });
+    }
+  }
 
   console.log(`[2-LLM] Decision: ${decision.next_scenario}, tools: ${decision.tools_to_use.length}`);
 
@@ -436,6 +455,8 @@ async function handleUserMessage(
   const toolResults: any = {};
 
   for (const toolDef of decision.tools_to_use) {
+    console.log(`[2-LLM] Executing tool: ${toolDef.tool_name} with input:`, JSON.stringify(toolDef.tool_input));
+
     const toolUse: ToolUseBlock = {
       type: 'tool_use',
       id: `tool_${Date.now()}`,
@@ -460,8 +481,14 @@ async function handleUserMessage(
 
   console.log(`[2-LLM] Tool results for Call 2:`, JSON.stringify(toolResults));
 
+  // Pass secondary context from Call 1 to Call 2
+  if (decision.secondary_context && decision.secondary_context.length > 0) {
+    toolResults.secondaryContext = decision.secondary_context;
+    console.log(`[2-LLM] Secondary context from Call 1:`, JSON.stringify(decision.secondary_context));
+  }
+
   // Reload user state after tool execution
-  const supabase = createServiceClient();
+  const supabase = context.dbClient;
   const { data: updatedUser } = await supabase
     .from('users')
     .select('*')
@@ -471,6 +498,52 @@ async function handleUserMessage(
   if (updatedUser) {
     context.user = updatedUser as User;
     context.progress = checkOnboardingProgress(context.user, context.conversation);
+  }
+
+  // If decision is no_message, skip Call 2 entirely
+  if (decision.next_scenario === 'no_message') {
+    console.log(`[2-LLM] Decision was no_message - skipping Call 2, sending no response`);
+
+    // Create re-engagement task if onboarding incomplete
+    if (!context.progress.isComplete) {
+      await createReengagementTask(
+        context.user.id,
+        context.conversation.id,
+        context.progress.currentStep,
+        context.progress.missingFields,
+        context.dbClient
+      );
+    }
+
+    return {
+      immediateReply: false, // Don't send any message
+      messages: [],
+      actions,
+      events
+    };
+  }
+
+  // If decision is emoji_reply_only, send just a thumbs up
+  if (decision.next_scenario === 'emoji_reply_only') {
+    console.log(`[2-LLM] Decision was emoji_reply_only - sending thumbs up acknowledgment`);
+
+    // Create re-engagement task if onboarding incomplete
+    if (!context.progress.isComplete) {
+      await createReengagementTask(
+        context.user.id,
+        context.conversation.id,
+        context.progress.currentStep,
+        context.progress.missingFields,
+        context.dbClient
+      );
+    }
+
+    return {
+      immediateReply: true,
+      messages: ['👍'],
+      actions,
+      events
+    };
   }
 
   console.log(`[2-LLM] Starting Call 2: Personality response`);
@@ -487,7 +560,7 @@ async function handleUserMessage(
   const personalityResponse = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 300, // Short responses only
-    temperature: 0.7, // Higher for natural personality
+    temperature: 0.5, // Moderate temp for natural but controlled personality
     system: personalityPrompt,
     messages: conversationMessages // Same conversation history for continuity
   });
@@ -511,7 +584,8 @@ async function handleUserMessage(
       context.user.id,
       context.conversation.id,
       context.progress.currentStep,
-      context.progress.missingFields
+      context.progress.missingFields,
+      context.dbClient
     );
   }
 
@@ -533,7 +607,7 @@ async function executeBouncerTools(
 ): Promise<{ actions: AgentAction[]; events: AgentEvent[] }> {
   const actions: AgentAction[] = [];
   const events: AgentEvent[] = [];
-  const supabase = createServiceClient();
+  const supabase = context.dbClient;
 
   for (const toolUse of toolUses) {
     const input = toolUse.input as any;
@@ -553,7 +627,7 @@ async function executeBouncerTools(
 
         // Update user record
         if (Object.keys(fields).length > 0) {
-          await collectUserInfo(context.user.id, fields);
+          await collectUserInfo(context.user.id, fields, context.dbClient);
 
           actions.push({
             type: 'update_user_field',
@@ -565,7 +639,7 @@ async function executeBouncerTools(
         // Handle referrer if provided
         if (input.referrer_name && !context.user.referred_by) {
           const referrerName = input.referrer_name;
-          const matches = await lookupUserByName(referrerName);
+          const matches = await lookupUserByName(referrerName, undefined, context.dbClient);
 
           if (matches.length > 0) {
             // Use first match (can be enhanced with LLM confirmation later)
@@ -601,11 +675,14 @@ async function executeBouncerTools(
         if (input.nomination) {
           const introOpportunityId = await storeNomination(
             context.user.id,
-            input.nomination
+            input.nomination,
+            context.dbClient
           );
 
+          // Note: storeNomination creates intro_opportunities (system-initiated)
+          // This is correct - user nominates someone, system creates opportunity for them to make intro
           actions.push({
-            type: 'create_intro_opportunity',
+            type: 'show_intro_opportunity',
             params: {
               intro_opportunity_id: introOpportunityId,
               nomination: input.nomination
@@ -633,30 +710,22 @@ async function executeBouncerTools(
       }
 
       case 'complete_onboarding': {
-        // Complete onboarding and mark user as verified
-        const updatedUser = await completeOnboarding(context.user.id);
+        // Mark onboarding info as complete (all fields collected + email verified)
+        // NOTE: Does NOT set verified=true or change poc_agent_type
+        // Those happen through manual approval process
+        await completeOnboarding(context.user.id, context.dbClient);
 
         actions.push({
-          type: 'mark_user_verified',
+          type: 'onboarding_info_complete',
           params: {
             user_id: context.user.id,
-            verified_at: new Date().toISOString()
+            completed_at: new Date().toISOString()
           },
-          reason: 'All onboarding steps completed'
+          reason: 'All onboarding information collected and email verified - ready for manual approval'
         });
 
-        // Publish user.verified event
-        events.push({
-          event_type: 'user.verified',
-          aggregate_id: context.user.id,
-          aggregate_type: 'user',
-          payload: {
-            userId: context.user.id,
-            verificationCompletedAt: new Date().toISOString(),
-            pocAgentType: updatedUser.poc_agent_type
-          },
-          created_by: 'bouncer_agent'
-        });
+        // Note: user.onboarding_info_complete event is published by completeOnboarding()
+        // No need to push additional events here
         break;
       }
     }
@@ -665,62 +734,16 @@ async function executeBouncerTools(
   return { actions, events };
 }
 
-async function handleEmailVerifiedAcknowledgment(context: BouncerContext): Promise<AgentResponse> {
-  // Use 2-LLM architecture for email verification acknowledgment
-  const conversationMessages = context.recentMessages
-    .slice(-10)
-    .map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'assistant' as 'user' | 'assistant',
-      content: msg.content
-    }));
-
-  // Add system context about email verification
-  conversationMessages.push({
-    role: 'user',
-    content: '(email verification received)'
-  });
-
-  console.log(`[2-LLM] Email verification acknowledged - using personality prompt`);
-
-  // Use Call 2 personality prompt directly (no decisions needed)
-  const personalityPrompt = buildPersonalityPrompt(
-    'email_verification_received',
-    `User just sent verification email. Acknowledge receipt, reassure privacy, and ask what they hope to get from community.`
-  );
-
-  const personalityResponse = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 300,
-    temperature: 0.7,
-    system: personalityPrompt,
-    messages: conversationMessages
-  });
-
-  const textBlocks = personalityResponse.content.filter(
-    (block): block is Anthropic.Messages.TextBlock => block.type === 'text'
-  );
-
-  // Parse message sequences (split by "---" delimiter)
-  const rawTexts = textBlocks.map(block => block.text.trim()).filter(t => t.length > 0);
-  const messageTexts = rawTexts.flatMap(text =>
-    text.split(/\n---\n/).map(msg => msg.trim()).filter(msg => msg.length > 0)
-  );
-
-  return {
-    immediateReply: true,
-    messages: messageTexts,
-    actions: [],
-    events: [],
-    reasoning: 'Email verification acknowledged using 2-LLM personality layer'
-  };
-}
 
 
 /**
  * Extracts user information from conversational message using Claude.
  */
-async function logAgentAction(log: Partial<AgentActionsLog>): Promise<void> {
-  const supabase = createServiceClient();
+async function logAgentAction(
+  log: Partial<AgentActionsLog>,
+  dbClient: SupabaseClient = createServiceClient()
+): Promise<void> {
+  const supabase = dbClient;
 
   await supabase.from('agent_actions_log').insert({
     agent_type: log.agent_type || 'bouncer',

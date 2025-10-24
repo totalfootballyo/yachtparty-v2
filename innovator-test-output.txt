@@ -1,0 +1,870 @@
+
+> @yachtparty/agent-innovator@1.0.0 test
+> jest
+
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+ts-jest[ts-jest-transformer] (WARN) Define `ts-jest` config under `globals` is deprecated. Please do
+transform: {
+    <transform_regex>: ['ts-jest', { /* ts-jest config goes here in Jest */ }],
+},
+See more at https://kulshekhar.github.io/ts-jest/docs/getting-started/presets#advanced
+FAIL __tests__/innovator.innovator-tools.test.ts
+  ● Test suite failed to run
+
+    [96m__tests__/innovator.innovator-tools.test.ts[0m:[93m240[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'name' does not exist in type '{ prospectName: string; prospectCompany: string; connectorUserId: string; bountyCredits?: number | undefined; status?: "open" | "pending" | "accepted" | "rejected" | "completed" | "removed" | undefined; }'.
+
+    [7m240[0m           name: 'Alice Chen',
+    [7m   [0m [91m          ~~~~[0m
+    [96m__tests__/innovator.innovator-tools.test.ts[0m:[93m246[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'name' does not exist in type '{ prospectName: string; prospectCompany: string; connectorUserId: string; bountyCredits?: number | undefined; status?: "open" | "pending" | "accepted" | "rejected" | "completed" | "removed" | undefined; }'.
+
+    [7m246[0m           name: 'Bob Smith',
+    [7m   [0m [91m          ~~~~[0m
+
+FAIL __tests__/innovator.intro-flows.test.ts
+  ● Test suite failed to run
+
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m59[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m59[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m  [0m [91m                                                                ~~~~~~~~~~~[0m
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m96[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m96[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m  [0m [91m                                                                ~~~~~~~~~~~[0m
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m134[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m134[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m   [0m [91m                                                                ~~~~~~~~~~~[0m
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m175[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m175[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m   [0m [91m                                                                ~~~~~~~~~~~[0m
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m216[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m216[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m   [0m [91m                                                                ~~~~~~~~~~~[0m
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m257[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m257[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m   [0m [91m                                                                ~~~~~~~~~~~[0m
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m438[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m438[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m   [0m [91m                                                                ~~~~~~~~~~~[0m
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m474[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m474[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m   [0m [91m                                                                ~~~~~~~~~~~[0m
+    [96m__tests__/innovator.intro-flows.test.ts[0m:[93m518[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ role: string; content: string; created_at: string; }' is not assignable to parameter of type 'Message'.
+      Type '{ role: string; content: string; created_at: string; }' is missing the following properties from type 'Message': id, conversation_id, user_id, direction, and 4 more.
+
+    [7m518[0m       const decision = await callUserMessageDecision(anthropic, userMessage, context);
+    [7m   [0m [91m                                                                ~~~~~~~~~~~[0m
+
+FAIL __tests__/innovator.scenarios.test.ts
+  ● Test suite failed to run
+
+    [96m__tests__/innovator.scenarios.test.ts[0m:[93m176[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'name' does not exist in type '{ prospectName: string; prospectCompany: string; connectorUserId: string; bountyCredits?: number | undefined; status?: "open" | "pending" | "accepted" | "rejected" | "completed" | "removed" | undefined; }'.
+
+    [7m176[0m           name: 'Mike Chen',
+    [7m   [0m [91m          ~~~~[0m
+    [96m__tests__/innovator.scenarios.test.ts[0m:[93m183[0m:[93m49[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'high' does not exist in type '{ highIntros?: number | undefined; mediumIntros?: number | undefined; lowIntros?: number | undefined; }'.
+
+    [7m183[0m       const priorities = createTestPriorities({ high: 1 });
+    [7m   [0m [91m                                                ~~~~[0m
+    [96m__tests__/innovator.scenarios.test.ts[0m:[93m285[0m:[93m49[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'high' does not exist in type '{ highIntros?: number | undefined; mediumIntros?: number | undefined; lowIntros?: number | undefined; }'.
+
+    [7m285[0m       const priorities = createTestPriorities({ high: 1 });
+    [7m   [0m [91m                                                ~~~~[0m
+    [96m__tests__/innovator.scenarios.test.ts[0m:[93m288[0m:[93m21[0m - [91merror[0m[90m TS2339: [0mProperty 'details' does not exist on type 'UserPriority'.
+
+    [7m288[0m       priorities[0].details = {
+    [7m   [0m [91m                    ~~~~~~~[0m
+    [96m__tests__/innovator.scenarios.test.ts[0m:[93m400[0m:[93m11[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'name' does not exist in type '{ prospectName: string; prospectCompany: string; connectorUserId: string; bountyCredits?: number | undefined; status?: "open" | "pending" | "accepted" | "rejected" | "completed" | "removed" | undefined; }'.
+
+    [7m400[0m           name: 'Rachel Stevens',
+    [7m   [0m [91m          ~~~~[0m
+    [96m__tests__/innovator.scenarios.test.ts[0m:[93m407[0m:[93m49[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'high' does not exist in type '{ highIntros?: number | undefined; mediumIntros?: number | undefined; lowIntros?: number | undefined; }'.
+
+    [7m407[0m       const priorities = createTestPriorities({ high: 1 });
+    [7m   [0m [91m                                                ~~~~[0m
+    [96m__tests__/innovator.scenarios.test.ts[0m:[93m462[0m:[93m49[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'low' does not exist in type '{ highIntros?: number | undefined; mediumIntros?: number | undefined; lowIntros?: number | undefined; }'.
+
+    [7m462[0m       const priorities = createTestPriorities({ low: 3 });
+    [7m   [0m [91m                                                ~~~[0m
+
+PASS __tests__/innovator.inherited-smoke.test.ts (10.326 s)
+  ● Console
+
+    console.log
+      
+      === Innovator Happy Path Test Results ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-smoke.test.ts:117:15)
+
+    console.log
+      User message: Do you know anyone who has experience with CTV advertising platforms? I'd love to get recommendations from someone who's used them.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-smoke.test.ts:118:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community to see who has hands-on experience with CTV platforms and can share recommendations.
+      I'll circle back when I find someone who's actually used these platforms and can give you real insights.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-smoke.test.ts:119:15)
+
+    console.log
+      Actions taken: ask_community_question
+
+      at Object.<anonymous> (__tests__/innovator.inherited-smoke.test.ts:120:15)
+
+    console.log
+      ==========================================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-smoke.test.ts:121:15)
+
+FAIL __tests__/innovator.inherited-scenarios.test.ts (30.082 s)
+  ● Console
+
+    console.log
+      
+      === Intro Opportunity Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:106:15)
+
+    console.log
+      User message: Do you know anyone who has experience with CTV advertising platforms?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:107:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community to see who has hands-on experience with CTV platforms and circle back when I have something.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:108:15)
+
+    console.log
+      Actions: ask_community_question
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:109:15)
+
+    console.log
+      ==============================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:110:15)
+
+    console.log
+      
+      === Solution Research Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:164:15)
+
+    console.log
+      User message: Can you help me research CTV advertising platforms? I need to compare features and pricing.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:165:15)
+
+    console.log
+      Agent response: I'll research CTV advertising platforms and pull together feature/pricing comparisons for you.
+      Should have something comprehensive back to you once I've vetted the options.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:166:15)
+
+    console.log
+      Actions: request_solution_research
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:167:15)
+
+    console.log
+      ==============================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:168:15)
+
+    console.log
+      
+      === Terse Communication Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:213:15)
+
+    console.log
+      User message: CTV vendors?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:214:15)
+
+    console.log
+      Agent response: I'll research CTV vendors and get back to you with options.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:215:15)
+
+    console.log
+      Response length: 59
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:216:15)
+
+    console.log
+      ================================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:217:15)
+
+  ● Innovator Agent - Inherited from Concierge - Comprehensive Scenarios › User Message: Ambiguous Intent (Clarification) › should request clarification when "partners" intent is ambiguous
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 1
+
+      258 |
+      259 |       // Should NOT execute tools yet (waiting for clarification)
+    > 260 |       expect(response.actions.length).toBe(0);
+          |                                       ^
+      261 |
+      262 |       // Response should ask for clarification
+      263 |       if (response.messages) {
+
+      at Object.<anonymous> (__tests__/innovator.inherited-scenarios.test.ts:260:39)
+
+PASS __tests__/innovator.inherited-edgecases.test.ts (38.532 s)
+  ● Console
+
+    console.log
+      
+      === Brief Message Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:81:15)
+
+    console.log
+      User: help
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:82:15)
+
+    console.log
+      Response: What kind of help with CTV vendors are you looking for? 
+      
+      Are you trying to advertise on CTV platforms, integrate with them, or sell solutions to them?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:83:15)
+
+    console.log
+      ==========================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:84:15)
+
+    console.log
+      
+      === Long Message Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:131:15)
+
+    console.log
+      User message length: 715 chars
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:132:15)
+
+    console.log
+      Response: That's a solid 10x scale goal with some real technical challenges. Let me reach out to the community for CTV experts who've tackled similar attribution and targeting issues.
+      I'll focus on finding people who've specifically worked with Trade Desk alternatives and cross-platform attribution setups. Should have some options to share once I hear back.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:133:15)
+
+    console.log
+      Actions: request_solution_research, ask_community_question, update_user_field
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:134:15)
+
+    console.log
+      =========================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:135:15)
+
+    console.log
+      
+      === Mixed Priorities Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:183:15)
+
+    console.log
+      Priorities: 1 high, 2 medium, 3 low
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:184:15)
+
+    console.log
+      Decision: Message
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:185:15)
+
+    console.log
+      Response: Found 3 CTV advertising platforms that match your criteria. Want the breakdown?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:187:17)
+
+    console.log
+      =============================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:189:15)
+
+    console.log
+      
+      === Tone Matching Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:232:15)
+
+    console.log
+      User style: Terse
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:233:15)
+
+    console.log
+      Response: Connected TV - streaming platforms like Roku, Samsung TV Plus, etc.
+      
+      I'll research CTV advertising vendors and circle back with options.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:234:15)
+
+    console.log
+      Avg length: 136
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:236:15)
+
+    console.log
+      ==========================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-edgecases.test.ts:237:15)
+
+PASS __tests__/innovator.inherited-multi-message.test.ts (39.996 s)
+  ● Console
+
+    console.log
+      
+      === Typo Correction Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:122:15)
+
+    console.log
+      Prior message: "Bran"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:123:15)
+
+    console.log
+      Current message: "Brian"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:124:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community to see if we have connections at Roku and get back to you when I have something.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:125:15)
+
+    console.log
+      Actions: ask_community_question
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:126:15)
+
+    console.log
+      Interpretation: Agent should treat "Brian" as corrected name
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:127:15)
+
+    console.log
+      ============================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:128:15)
+
+    console.log
+      
+      === Unclear Response Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:208:15)
+
+    console.log
+      We asked: Ad platforms vs. consultants?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:209:15)
+
+    console.log
+      User replied: "platforms"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:210:15)
+
+    console.log
+      Agent response: I'll research CTV advertising platforms that can help you scale and get back to you with options.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:211:15)
+
+    console.log
+      Actions: request_solution_research
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:212:15)
+
+    console.log
+      Interpretation: Inferred ad platforms from context
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:213:15)
+
+    console.log
+      =============================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:214:15)
+
+    console.log
+      
+      === Topic Change Detection Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:291:15)
+
+    console.log
+      We asked: CTV platforms or something else?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:292:15)
+
+    console.log
+      User replied: "Actually, do you know anyone at Hulu?"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:293:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community and see who we have at Hulu.
+      What are you looking to do with them - advertise, partner, or sell something?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:294:15)
+
+    console.log
+      Actions: ask_community_question
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:295:15)
+
+    console.log
+      Interpretation: Should recognize topic change to intro request
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:296:15)
+
+    console.log
+      ===================================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:297:15)
+
+    console.log
+      
+      === Rapid Messages Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:381:15)
+
+    console.log
+      Message 1 (15s ago): "Need help with CTV"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:382:15)
+
+    console.log
+      Message 2 (10s ago): "Specifically ad platforms"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:383:15)
+
+    console.log
+      Message 3 (now): "Looking at Roku, Samsung, Fire TV"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:384:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community about CTV ad platforms and circle back when I have something.
+      Are you looking to advertise on these platforms, partner with them, or sell solutions to them?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:385:15)
+
+    console.log
+      Actions: ask_community_question
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:386:15)
+
+    console.log
+      Interpretation: Agent made assumption about what user needs
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:387:15)
+
+    console.log
+      ===========================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:390:15)
+
+    console.log
+      
+      === Correction After Clarification Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:480:15)
+
+    console.log
+      We asked: Business partners or strategic partners?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:481:15)
+
+    console.log
+      User said: "The first"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:482:15)
+
+    console.log
+      User corrected: "Actually the second one"
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:483:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community about strategic partnership opportunities and circle back when I have something.
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:484:15)
+
+    console.log
+      Actions: ask_community_question
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:485:15)
+
+    console.log
+      Interpretation: Should use corrected answer (strategic partners)
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:486:15)
+
+    console.log
+      ==========================================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-multi-message.test.ts:487:15)
+
+FAIL __tests__/innovator.inherited-reengagement.test.ts (45.586 s)
+  ● Console
+
+    console.log
+      
+      === High-Value Re-engagement Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:100:15)
+
+    console.log
+      Context: 7 days since last message, 2 high priorities
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:101:15)
+
+    console.log
+      Agent response: Found 3 CTV advertising platforms that match your criteria. Want the breakdown?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:102:15)
+
+    console.log
+      Decision: Should message
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:103:15)
+
+    console.log
+      ======================================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:104:15)
+
+    console.log
+      
+      === Frustrated User Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:167:15)
+
+    console.log
+      Context: User said "too many messages", 5 days ago
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:168:15)
+
+    console.log
+      Priorities: 2 items available
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:169:15)
+
+    console.log
+      Decision: DO NOT message (user frustrated)
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:170:15)
+
+    console.log
+      Extended by: 60 days
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:171:15)
+
+    console.log
+      ============================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:172:15)
+
+    console.log
+      
+      === Outstanding Request Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:228:15)
+
+    console.log
+      Context: 7 days since last message, 1 outstanding community request
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:229:15)
+
+    console.log
+      Agent response: Found 3 CTV advertising platforms that match your criteria. Want the breakdown?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:230:15)
+
+    console.log
+      Decision: Should reassure about outstanding request
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:231:15)
+
+    console.log
+      ================================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:232:15)
+
+    console.log
+      
+      === Multi-Threading Test ===
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:361:15)
+
+    console.log
+      Context: 7 days, 3 priorities + 1 outstanding request
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:362:15)
+
+    console.log
+      Agent response: Found 3 CTV advertising platforms that match your criteria. Want the breakdown?
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:363:15)
+
+    console.log
+      Message count: 1
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:364:15)
+
+    console.log
+      ============================
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:365:15)
+
+  ● Innovator Agent - Inherited from Concierge - Re-engagement Logic › Should Wait: Too Soon to Re-engage › should NOT message if only 2 days since last interaction
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+      276 |
+      277 |       // Should NOT message (too soon)
+    > 278 |       expect(response.immediateReply).toBe(false);
+          |                                       ^
+      279 |
+      280 |       // Should extend task (agent decides how long based on context)
+      281 |       expect(createAgentTask).toHaveBeenCalled();
+
+      at Object.<anonymous> (__tests__/innovator.inherited-reengagement.test.ts:278:39)
+
+FAIL __tests__/innovator.shared-concierge-behavior.test.ts (52.286 s)
+  ● Console
+
+    console.log
+      
+      === Innovator - Community Request Test ===
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:82:15)
+
+    console.log
+      User message: Do you know anyone who has experience with CTV advertising platforms?
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:83:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community to find CTV advertising platform experts and get back to you when I have something.
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:84:15)
+
+    console.log
+      Actions: ask_community_question
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:85:15)
+
+    console.log
+      ==========================================
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:86:15)
+
+    console.log
+      
+      === Innovator - Intro Opportunity Test ===
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:138:15)
+
+    console.log
+      User message: Do you know anyone who has experience with CTV advertising platforms?
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:139:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community to see who has CTV advertising platform experience and circle back when I have something.
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:140:15)
+
+    console.log
+      ==========================================
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:141:15)
+
+    console.log
+      
+      === Innovator - Solution Research Test ===
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:187:15)
+
+    console.log
+      User message: Can you help me research CTV advertising platforms? I need to compare features and pricing.
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:188:15)
+
+    console.log
+      Agent response: I'll research CTV advertising platforms and get back to you with options that fit your requirements.
+      This will include feature comparisons and pricing info so you can make an informed decision for your Q1 launch.
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:189:15)
+
+    console.log
+      ==========================================
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:190:15)
+
+    console.log
+      
+      === Innovator - Ambiguity Test ===
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:273:15)
+
+    console.log
+      User message: I'm trying to scale our CTV advertising from $100k to $1M in Q1. Want to find the right partners for that.
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:274:15)
+
+    console.log
+      Agent response: I'll research CTV advertising partners who can handle that scale and get back to you with options.
+      Are you looking to work directly with DSPs, go through agencies, or partner with other ad tech companies?
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:275:15)
+
+    console.log
+      Actions: request_solution_research
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:276:15)
+
+    console.log
+      ==================================
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:277:15)
+
+    console.log
+      
+      === Innovator - Tone Test ===
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:323:15)
+
+    console.log
+      User message: Can you help me find CTV experts?
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:324:15)
+
+    console.log
+      Agent response: Got it. I'll reach out to the community to find CTV advertising experts and get back to you when I have something.
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:325:15)
+
+    console.log
+      =============================
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:326:15)
+
+    console.log
+      
+      === Innovator - Terse Style Test ===
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:367:15)
+
+    console.log
+      User message: CTV vendors?
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:368:15)
+
+    console.log
+      Agent response: I'll research CTV vendors and get back to you with some options.
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:369:15)
+
+    console.log
+      Response length: 64
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:370:15)
+
+    console.log
+      ====================================
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:371:15)
+
+  ● Innovator - Concierge Behavior (Inherited) › Goal Storage › should store user goals when stated
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      225 |       const response = await invokeInnovatorAgent(incomingMessage, user, conversation);
+      226 |
+    > 227 |       expect(response.actions.some((a: any) => a.type === 'store_user_goal')).toBe(true);
+          |                                                                               ^
+      228 |       expect(response.messages && response.messages.length).toBeGreaterThan(0);
+      229 |
+      230 |       console.log('\n=== Innovator - Goal Storage Test ===');
+
+      at Object.<anonymous> (__tests__/innovator.shared-concierge-behavior.test.ts:227:79)
+
+Test Suites: 6 failed, 3 passed, 9 total
+Tests:       3 failed, 38 passed, 41 total
+Snapshots:   0 total
+Time:        52.908 s, estimated 54 s
+Ran all test suites.

@@ -7,6 +7,7 @@
  */
 
 import { createServiceClient } from './supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -102,7 +103,7 @@ function normalizeLinkedInUrl(url: string): string {
  */
 export function validateProspectRecord(
   record: ProspectRecord,
-  rowNumber: number
+  _rowNumber: number
 ): ProspectValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -245,14 +246,16 @@ export function parseProspectCSV(csvContent: string): Array<{
  * @param innovatorId - User ID of the innovator uploading prospects
  * @param prospects - Array of validated prospect records
  * @param uploadSource - Source identifier (e.g., 'csv_upload', 'manual_entry')
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns Upload result with success/failure counts
  */
 export async function uploadProspectsBatch(
   innovatorId: string,
   prospects: ProspectRecord[],
-  uploadSource: string = 'csv_upload'
+  uploadSource: string = 'csv_upload',
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<ProspectUploadResult> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
   const uploadBatchId = uuidv4();
 
   const recordsToInsert = prospects.map(prospect => ({

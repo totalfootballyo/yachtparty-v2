@@ -1,0 +1,866 @@
+I think we need to take a different approach.  
+
+
+The issue with initial testing current approach (i.e. mock data for inputs and string matching for gauging success) is that prior messages don’t match message history. This is solvable, but it only solves part of the issue we will have with test in general: no matter how scenarios and past messages we might generate, static synthetic scenarios create unrealistic conversations because they can't capture your agents' actual tone evolution and decision-making, so then the context itself is not a realistic test.  And string matching provides false positives.
+
+I think we should move toward an approach where we create 2-3 synthetic personas, and have them have real conversations with the various agents, storing the messages and tool call outputs in a test database, just as we would with regular users.  We can run this on a local supabase and manually trigger any cron-scheduled functions needed in tests.  We could also inject various intro-opportunities, community_requests, connection_requests etc into the local db to test proactive invocations as well.  
+
+If we were to do that, here is an incomplete list of things to consider:  
+
+*** We could copy our existing schema + triggers etc into the local test supabase.
+
+*** We would need to accept supabase as an optional parameter in all agents and tools/ functions., default to production. We would then need to then pass the same client through to all tool functions, like:
+
+The Flow
+Agent receives client → Agent passes client to tools → Tools use that client
+
+Triggers in the local supabase test db → invokes agent with test supabase client param → agents pass that parameter into functions/ tools
+
+
+
+// 1. Agent receives Supabase client
+  // 2. Agent passes SAME client to tool
+  // 3. Agent passes SAME client to message storage tool
+
+Tools accept and use the client:
+  supabaseClient: SupabaseClient  // 👈 Required parameter
+
+  supabaseClient: SupabaseClient  // 👈 Required parameter
+) {
+  const { data, error } = await supabaseClient  // 👈 Use passed client
+
+In tests:
+
+// tests/bouncer/simulation.test.ts
+const testSupabase = createClient('http://localhost:54321', LOCAL_KEY);
+
+// Mock Twilio so it doesn't actually send SMS
+const mockTwilio = {
+  messages: {
+    create: jest.fn().mockResolvedValue({ sid: 'test-sid' })
+  }
+};
+
+const response = await invokeBouncerAgent(
+  message,
+  user,
+  conversation,
+  testSupabase,  // 👈 Local DB
+  mockTwilio     // 👈 Mock Twilio
+);
+
+// Everything uses test infrastructure
+// ✅ Reads from local DB
+// ✅ Writes to local DB
+// ✅ Doesn't actually send SMS
+
+
+
+In production (GCP Cloud Run/Functions):
+//  production handler
+export async function ourInboundFunction (req, res) {
+  // No clients passed - uses production defaults
+  const response = await invokeBouncerAgent(
+    message,
+    user,
+    conversation
+    // No parameters = production Supabase + production Twilio
+  );
+  
+  res.json(response);
+}
+
+
+
+*** If our current tools are scattered throughout the agent code, we should consider extracting them to them to shared functions. (Let’s discuss this)
+
+
+*** I created a new folder at the root for testing. Is this a good place for it? If not we can move it, but wherever we put it (under packages if needed?), we should collect everything related to testing in that folder (we are creating too many random files at the root)
+
+
+*** we should use a Single Parameterized Agent as the test user, like:
+
+// testing/shared/simulatedUser.ts
+interface UserPersona {
+  name: string;
+  role: string;
+  company?: string;
+  communicationStyle: 'terse' | 'engaged' | 'verbose' | 'confused' | 'reluctant';
+  background: string;
+  goalOrientation: 'cooperative' | 'resistant' | 'distracted';
+  typicalResponseLength: 'brief' | 'moderate' | 'detailed';
+  quirks?: string[];  // Optional behavioral quirks
+}
+
+export async function createSimulatedUser(persona: UserPersona) {
+  const systemPrompt = buildPersonaPrompt(persona);
+  
+  return {
+    persona,
+    async respondTo(agentMessage: string, conversationHistory: Message[]) {
+      const response = await callClaude({
+        system: systemPrompt,
+        messages: [
+          ...conversationHistory,
+          { role: 'assistant', content: agentMessage }
+        ],
+        max_tokens: getMaxTokensForStyle(persona.communicationStyle)
+      });
+      
+      return response.content;
+    }
+  };
+}
+
+function buildPersonaPrompt(persona: UserPersona): string {
+  return `You are ${persona.name}, a ${persona.role}${persona.company ? ` at ${persona.company}` : ''}.
+
+BACKGROUND: ${persona.background}
+
+COMMUNICATION STYLE: ${getStyleInstructions(persona.communicationStyle)}
+
+GOAL ORIENTATION: ${getGoalInstructions(persona.goalOrientation)}
+
+${persona.quirks ? `BEHAVIORAL QUIRKS:\n${persona.quirks.map(q => `- ${q}`).join('\n')}` : ''}
+
+IMPORTANT RULES:
+- Stay in character throughout the conversation
+- Respond naturally as a real person would
+- ${persona.typicalResponseLength === 'brief' ? 'Keep responses to 1-10 words when possible' : ''}
+- Do not break character or mention you are simulating a user
+- React authentically to what the agent says`;
+}
+
+function getStyleInstructions(style: string): string {
+  const styles = {
+    terse: 'You are very busy and give minimal responses. 1-5 words is typical. You need prompting for details.',
+    engaged: 'You are cooperative and professional. You respond promptly with complete but concise information.',
+    verbose: 'You tend to over-explain and provide more context than necessary. You often go off on tangents.',
+    confused: 'You sometimes misunderstand questions. You ask clarifying questions. You may provide information in the wrong format.',
+    reluctant: 'You are slightly skeptical and hesitant. You need convincing. You ask questions back before answering.'
+  };
+  return styles[style];
+}
+
+function getGoalInstructions(goal: string): string {
+  const goals = {
+    cooperative: 'Your goal is to complete the onboarding/task successfully. You want to help the agent help you.',
+    resistant: 'You are not fully bought in. You may express concerns or resistance. Eventually you may comply, but not immediately.',
+    distracted: 'You sometimes ignore questions or respond to something the agent said 2 messages ago. You lose track of the conversation flow.'
+  };
+  return goals[goal];
+}
+
+
+Pre-Built Persona Library
+
+
+// testing/shared/personas.ts
+export const BOUNCER_TEST_PERSONAS: Record<string, UserPersona> = {
+  ENGAGED_PROFESSIONAL: {
+    name: 'Sarah Chen',
+    role: 'VP Marketing',
+    company: 'Acme Corp',
+    communicationStyle: 'engaged',
+    goalOrientation: 'cooperative',
+    typicalResponseLength: 'moderate',
+    background: 'You were referred by Ben. You are genuinely interested in joining Yachtparty. You provide information clearly and promptly.'
+  },
+  
+  TERSE_BUSY_EXEC: {
+    name: 'Mike Rodriguez',
+    role: 'CEO',
+    company: 'TechStart Inc',
+    communicationStyle: 'terse',
+    goalOrientation: 'cooperative',
+    typicalResponseLength: 'brief',
+    background: 'You were referred by Lisa. You are extremely busy and respond with minimal words. You need to be asked directly for each piece of information.'
+  },
+  
+  CONFUSED_USER: {
+    name: 'Alex Johnson',
+    role: 'Product Manager',
+    company: 'Design Co',
+    communicationStyle: 'confused',
+    goalOrientation: 'cooperative',
+    typicalResponseLength: 'moderate',
+    background: 'You were referred by Chris. You sometimes misunderstand questions. You might provide your email when asked for your company. You need clarification.',
+    quirks: [
+      'Sometimes provides information in wrong format (e.g., full address when asked for company)',
+      'Asks "what do you mean?" occasionally'
+    ]
+  },
+  
+  RELUCTANT_SKEPTIC: {
+    name: 'Jordan Lee',
+    role: 'Director of Sales',
+    company: 'BigCorp LLC',
+    communicationStyle: 'reluctant',
+    goalOrientation: 'resistant',
+    typicalResponseLength: 'moderate',
+    background: 'You were referred by someone you barely know. You are skeptical about giving out personal information. You ask questions back like "Why do you need that?" before answering.',
+    quirks: [
+      'Occasionally asks "Is this legitimate?"',
+      'Hesitates before sharing email or company info'
+    ]
+  },
+  
+  VERBOSE_OVERSHARER: {
+    name: 'Taylor Morgan',
+    role: 'Founder',
+    company: 'StartupXYZ',
+    communicationStyle: 'verbose',
+    goalOrientation: 'cooperative',
+    typicalResponseLength: 'detailed',
+    background: 'You were referred by a college friend. You love to talk and provide way more context than needed. A simple question gets a paragraph response.',
+    quirks: [
+      'Includes unnecessary details like "I actually go by my middle name"',
+      'Mentions tangential information like your weekend plans'
+    ]
+  }
+};
+
+
+
+
+
+Using Personas in Tests would look something like:
+
+// testing/bouncer/simulation.test.ts
+import { createSimulatedUser, BOUNCER_TEST_PERSONAS } from '../shared';
+
+describe('Bouncer Agent - Persona-Based Simulation', () => {
+  const testSupabase = createTestSupabase();
+  
+  Object.entries(BOUNCER_TEST_PERSONAS).forEach(([personaName, persona]) => {
+    it(`should successfully onboard ${personaName}`, async () => {
+      // Create test user and conversation in DB
+      const { userId, conversationId } = await setupTestScenario(testSupabase);
+      
+      // Create simulated user with this persona
+      const simulatedUser = await createSimulatedUser(persona);
+      
+      // Simulate conversation
+      const conversationHistory: Message[] = [];
+      let turnCount = 0;
+      const maxTurns = 20;
+      
+      // Initial agent message
+      let agentMessage = "Hey... who told you about this?";
+      
+      while (turnCount < maxTurns) {
+        // Simulated user responds
+        const userResponse = await simulatedUser.respondTo(
+          agentMessage, 
+          conversationHistory
+        );
+        
+        // Store user message in test DB
+        await testSupabase.from('messages').insert({
+          conversation_id: conversationId,
+          role: 'user',
+          content: userResponse,
+          created_at: new Date()
+        });
+        
+        conversationHistory.push({
+          role: 'user',
+          content: userResponse
+        });
+        
+        // Agent processes message (using test DB)
+        const agentResponse = await invokeBouncerAgent(
+          { content: userResponse, conversation_id: conversationId },
+          { id: userId },
+          { id: conversationId },
+          testSupabase  // Uses local DB
+        );
+        
+        if (!agentResponse.messages || agentResponse.messages.length === 0) {
+          // Agent decided not to respond (completed or paused)
+          break;
+        }
+        
+        agentMessage = agentResponse.messages.join('\n');
+        conversationHistory.push({
+          role: 'assistant',
+          content: agentMessage
+        });
+        
+        turnCount++;
+      }
+      
+      // Verify onboarding completed
+      const { data: user } = await testSupabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      expect(user.first_name).toBeTruthy();
+      expect(user.last_name).toBeTruthy();
+      expect(user.email).toBeTruthy();
+      expect(user.company).toBeTruthy();
+      
+      // Verify it completed in reasonable time
+      expect(turnCount).toBeLessThan(maxTurns);
+      
+      // Save transcript for review
+      await saveTranscript(personaName, conversationHistory);
+    });
+  });
+});
+
+
+
+
+Advanced: Adaptive Personas
+For more realistic behavior:
+
+
+interface AdaptivePersona extends UserPersona {
+  emotionalState?: 'patient' | 'frustrated' | 'excited';
+  engagementDecay?: boolean;  // Gets less engaged over time
+}
+
+function buildPersonaPrompt(persona: AdaptivePersona, turnNumber: number): string {
+  let basePrompt = `You are ${persona.name}...`;
+  
+  // Adjust behavior based on conversation progress
+  if (persona.engagementDecay && turnNumber > 10) {
+    basePrompt += `\n\nADDITIONAL CONTEXT: You are getting impatient. The conversation has gone on longer than expected. Your responses may become shorter or show mild frustration.`;
+  }
+  
+  return basePrompt;
+}
+
+
+
+
+*** Then we would create a Judge Agent that evaluates the results (as opposed to string matching, etc)
+
+// testing/shared/judgeAgent.ts
+interface EvaluationCriteria {
+  name: string;
+  description: string;
+  scale: 'binary' | 'numeric' | 'likert';
+  minScore: number;
+  maxScore: number;
+  weight?: number;  // For weighted scoring
+}
+
+interface ConversationEvaluation {
+  criteria: Record<string, {
+    score: number;
+    reasoning: string;
+    examples?: string[];  // Specific message excerpts
+  }>;
+  overallScore: number;
+  summary: string;
+  passedThreshold: boolean;
+}
+
+export async function createJudgeAgent(
+  agentType: 'bouncer' | 'innovator' | 'concierge'
+) {
+  const criteria = getEvaluationCriteria(agentType);
+  
+  return {
+    async evaluateConversation(
+      messages: Message[],
+      finalUserState: any,
+      expectedOutcome: any,
+      scenario: string
+    ): Promise<ConversationEvaluation> {
+      const evaluationPrompt = buildEvaluationPrompt({
+        messages,
+        finalUserState,
+        expectedOutcome,
+        criteria,
+        scenario
+      });
+      
+      const response = await callClaude({
+        system: JUDGE_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: evaluationPrompt }],
+        temperature: 0.0,  // Deterministic judging
+        max_tokens: 2000
+      });
+      
+      return parseEvaluationResponse(response, criteria);
+    }
+  };
+}
+
+
+
+
+
+Criteria Definitions by Agent (these are not correct, but this is the idea:)
+
+// tests/shared/evaluationCriteria.ts
+export const BOUNCER_EVALUATION_CRITERIA: Record<string, EvaluationCriteria> = {
+  task_completion: {
+    name: 'Task Completion',
+    description: 'Did the agent successfully collect all required onboarding information (name, company, title, email, and send verification instructions)?',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.3
+  },
+  
+  tone_consistency: {
+    name: 'Tone Consistency',
+    description: 'Was the agent consistently warm, concise, and helpful throughout the conversation? No overly formal language, no unnecessary exclamations.',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.2
+  },
+  
+  efficiency: {
+    name: 'Efficiency',
+    description: 'Did the agent collect information efficiently without unnecessary back-and-forth? Should complete in under 15 messages for cooperative users.',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.15
+  },
+  
+  error_handling: {
+    name: 'Error Handling',
+    description: 'Did the agent gracefully handle user confusion, wrong formats, or off-topic responses without breaking character?',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.15
+  },
+  
+  context_awareness: {
+    name: 'Context Awareness',
+    description: 'Did the agent remember and reference previous information appropriately? No asking for information already provided.',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.1
+  },
+  
+  re_engagement_quality: {
+    name: 'Re-engagement Quality',
+    description: 'If this was a re-engagement scenario, was the tone appropriately softer and less demanding than initial onboarding?',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.1
+  }
+};
+
+export const INNOVATOR_EVALUATION_CRITERIA: Record<string, EvaluationCriteria> = {
+  priority_awareness: {
+    name: 'Priority Awareness',
+    description: 'Did the agent correctly identify and prioritize high-value opportunities over low-value ones?',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.25
+  },
+  
+  message_appropriateness: {
+    name: 'Message Appropriateness',
+    description: 'Was the decision to message (or not message) appropriate given the context, user state, and available priorities?',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.25
+  },
+  
+  message_quality: {
+    name: 'Message Quality',
+    description: 'If a message was sent, was it well-crafted, personalized, and actionable? Did it reference specific context appropriately?',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.2
+  },
+  
+  tone_matching: {
+    name: 'Tone Matching',
+    description: 'Did the agent adapt tone to match the user\'s communication style (terse/verbose/formal/casual)?',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.15
+  },
+  
+  no_hallucinations: {
+    name: 'No Hallucinations',
+    description: 'Did the agent only reference actual opportunities, requests, and context? No invented introductions or fake connections.',
+    scale: 'numeric',
+    minScore: 0,
+    maxScore: 1,
+    weight: 0.15
+  }
+};
+
+function getEvaluationCriteria(agentType: string): Record<string, EvaluationCriteria> {
+  const criteriaMap = {
+    bouncer: BOUNCER_EVALUATION_CRITERIA,
+    innovator: INNOVATOR_EVALUATION_CRITERIA,
+    // ... others
+  };
+  return criteriaMap[agentType];
+}
+
+
+Evaluation Prompt Template
+
+
+const JUDGE_SYSTEM_PROMPT = `You are an expert evaluator of conversational AI agents. Your role is to objectively assess agent performance against specific criteria.
+
+INSTRUCTIONS:
+- Evaluate the conversation based ONLY on the provided criteria
+- Provide specific evidence from the conversation to support your scores
+- Use the full range of the scoring scale (don't cluster around middle values)
+- Be critical but fair - identify both strengths and weaknesses
+- Your evaluation should be consistent across similar conversations
+
+OUTPUT FORMAT:
+For each criterion, provide:
+1. A score (use the specified scale)
+2. Clear reasoning explaining your score
+3. Specific examples from the conversation (quote relevant messages)
+
+Be thorough and precise in your evaluation.`;
+
+function buildEvaluationPrompt({
+  messages,
+  finalUserState,
+  expectedOutcome,
+  criteria,
+  scenario
+}: {
+  messages: Message[];
+  finalUserState: any;
+  expectedOutcome: any;
+  criteria: Record<string, EvaluationCriteria>;
+  scenario: string;
+}): string {
+  const conversationTranscript = messages
+    .map((m, i) => `[${i + 1}] ${m.role}: ${m.content}`)
+    .join('\n\n');
+  
+  const criteriaDescriptions = Object.entries(criteria)
+    .map(([key, c]) => {
+      return `**${c.name}** (${key})
+Description: ${c.description}
+Score range: ${c.minScore} to ${c.maxScore}
+Weight: ${c.weight ?? 1.0}`;
+    })
+    .join('\n\n');
+  
+  return `# Conversation Evaluation Task
+
+## Scenario Context
+${scenario}
+
+## Expected Outcome
+${JSON.stringify(expectedOutcome, null, 2)}
+
+## Actual Final State
+${JSON.stringify(finalUserState, null, 2)}
+
+## Conversation Transcript
+${conversationTranscript}
+
+## Evaluation Criteria
+${criteriaDescriptions}
+
+---
+
+Please evaluate this conversation against each criterion above. For each criterion, provide:
+
+1. **Score**: A numeric value within the specified range
+2. **Reasoning**: 2-3 sentences explaining your score with specific evidence
+3. **Examples**: Quote specific messages that support your score
+
+After evaluating each criterion, provide:
+- **Overall Score**: Weighted average of all criteria scores
+- **Summary**: 2-3 sentences summarizing the conversation's strengths and weaknesses
+- **Pass/Fail**: Based on threshold of 0.8 overall score
+
+Format your response as JSON:
+\`\`\`json
+{
+  "criteria": {
+    "criterion_key": {
+      "score": 0.8,
+      "reasoning": "...",
+      "examples": ["message quote 1", "message quote 2"]
+    },
+    ...
+  },
+  "overallScore": 0.75,
+  "summary": "...",
+  "passedThreshold": true
+}
+\`\`\``;
+}
+
+
+
+Parsing Judge Response
+
+
+function parseEvaluationResponse(
+  response: any,
+  criteria: Record<string, EvaluationCriteria>
+): ConversationEvaluation {
+  try {
+    // Extract JSON from response
+    const jsonMatch = response.content[0].text.match(/``````/);
+    if (!jsonMatch) {
+      throw new Error('Judge did not return valid JSON');
+    }
+    
+    const evaluation = JSON.parse(jsonMatch[1]);
+    
+    // Validate all criteria were scored
+    const missingCriteria = Object.keys(criteria).filter(
+      key => !evaluation.criteria[key]
+    );
+    
+    if (missingCriteria.length > 0) {
+      console.warn(`Judge missed criteria: ${missingCriteria.join(', ')}`);
+    }
+    
+    // Calculate weighted overall score if not provided
+    if (!evaluation.overallScore) {
+      evaluation.overallScore = calculateWeightedScore(
+        evaluation.criteria,
+        criteria
+      );
+    }
+    
+    // Default threshold is 0.7
+    evaluation.passedThreshold = evaluation.overallScore >= 0.7;
+    
+    return evaluation as ConversationEvaluation;
+  } catch (error) {
+    console.error('Failed to parse judge response:', error);
+    throw error;
+  }
+}
+
+function calculateWeightedScore(
+  scores: Record<string, { score: number }>,
+  criteria: Record<string, EvaluationCriteria>
+): number {
+  let totalWeight = 0;
+  let weightedSum = 0;
+  
+  Object.entries(scores).forEach(([key, result]) => {
+    const criterion = criteria[key];
+    const weight = criterion?.weight ?? 1.0;
+    
+    totalWeight += weight;
+    weightedSum += result.score * weight;
+  });
+  
+  return totalWeight > 0 ? weightedSum / totalWeight : 0;
+}
+
+
+Using Judge in Tests
+
+// testing/bouncer/simulation.test.ts
+describe('Bouncer Agent - Judged Simulation Tests', () => {
+  const testSupabase = createTestSupabase();
+  const judge = createJudgeAgent('bouncer');
+  
+  Object.entries(BOUNCER_TEST_PERSONAS).forEach(([personaName, persona]) => {
+    it(`should pass evaluation for ${personaName}`, async () => {
+      // Setup
+      const { userId, conversationId } = await setupTestScenario(testSupabase);
+      const simulatedUser = await createSimulatedUser(persona);
+      
+      // Run simulation
+      const { messages, finalUserState } = await runConversationSimulation({
+        agent: invokeBouncerAgent,
+        simulatedUser,
+        testSupabase,
+        userId,
+        conversationId,
+        maxTurns: 20
+      });
+      
+      // Judge evaluates
+      const evaluation = await judge.evaluateConversation(
+        messages,
+        finalUserState,
+        {
+          expectedFields: ['first_name', 'last_name', 'email', 'company', 'title'],
+          expectedStatus: 'email_verification_sent'
+        },
+        `${personaName}: ${persona.background}`
+      );
+      
+      // Log detailed results
+      console.log(`\n=== Evaluation for ${personaName} ===`);
+      console.log(`Overall Score: ${evaluation.overallScore.toFixed(2)}`);
+      console.log(`Passed: ${evaluation.passedThreshold ? '✅' : '❌'}`);
+      console.log('\nCriteria Scores:');
+      Object.entries(evaluation.criteria).forEach(([key, result]) => {
+        console.log(`  ${key}: ${result.score.toFixed(2)} - ${result.reasoning}`);
+      });
+      console.log(`\nSummary: ${evaluation.summary}`);
+      console.log('=====================================\n');
+      
+      // Save full evaluation
+      await saveEvaluation(personaName, evaluation, messages);
+      
+      // Assert
+      expect(evaluation.passedThreshold).toBe(true);
+      expect(evaluation.overallScore).toBeGreaterThan(0.7);
+      
+      // Optional: stricter assertions on specific criteria
+      expect(evaluation.criteria.task_completion.score).toBeGreaterThan(0.8);
+      expect(evaluation.criteria.tone_consistency.score).toBeGreaterThan(0.7);
+    });
+  });
+});
+
+
+Advanced: Multi-Turn Evaluation
+For complex scenarios, evaluate during the conversation:
+
+
+interface InProgressEvaluation {
+  currentScore: number;
+  issues: string[];
+  shouldAbort: boolean;
+}
+
+async function evaluateInProgress(
+  messages: Message[],
+  turnNumber: number
+): Promise<InProgressEvaluation> {
+  // Lighter-weight evaluation during conversation
+  const prompt = `Evaluate this conversation in progress (turn ${turnNumber}/20).
+  
+  Identify any critical issues:
+  - Agent asking for information already provided
+  - Breaking character or tone
+  - Hallucinating information
+  - Going in circles
+  
+ 
+
+*** CHALLENGES WITH THE ABOVE APPROACH ***
+
+  1. Cost & Performance
+
+  Problem: Every test run involves dozens of LLM calls:
+  - Simulated user responses: 10-20 Claude calls per conversation
+  - Agent responses: 10-20 Claude calls (your production agent code)
+  - Judge evaluation: 1 Claude call per test
+  - 5 personas × 3 agents = 15 tests minimum
+
+  Mitigation:
+  - we wont run these tests often and we'll monitor the cost 
+  - let's not reduce the effectiveness of the tests
+
+  
+  2. Test Determinism (The Big One)
+
+  Problem: LLMs are non-deterministic:
+  Run 1: Simulated user says "Sarah Chen" → Test passes
+  Run 2: Simulated user says "Sarah" → Agent asks for last name → Test still passes
+  Run 3: Simulated user says "My name is Sarah Chen from Acme" → Different conversation flow → Test passes with different score
+
+  Impact:
+  - Hard to detect regressions (score fluctuates naturally)
+  - Flaky tests that pass/fail randomly
+  - Can't use traditional "expected === actual" assertions
+  - Judge scoring will vary: 0.72 vs 0.75 vs 0.78 on same scenario
+
+  Mitigation:
+  - No need to mitigate the variability of test users -- humans are ambiguous and make errors, so this will create realism in testing and show the agents can handle weirdness
+  - Ultimately, the decision of whether an agent needs to be modified has to be a manual one for now. 
+  - Judge scoring should be used as a way to helpo human reviewers decide where to focus. A test that is scored .65 warrants more focus that one scored .92
+  - Accept some flakiness as trade-off for realism
+
+
+  3. Debugging Failures
+
+  - Save full transcripts to /Testing/transcripts/{testName}/
+  - Include judge reasoning in test output
+  - Add breakpoint tests for critical flows (email verification)
+  - Combine with unit tests for specific behaviors
+
+
+  4. Architectural Refactoring Required
+
+  Problem: Parameterizing Supabase client touches everything.  
+
+  Mitigation: 
+  - Use default parameters to maintain backward compatibility:
+  async function invokeBouncerAgent(
+    message,
+    user,
+    conversation,
+    supabaseClient = createServiceClient() // Default to production
+  )
+  - Phased rollout: Begin with Bouncer and tools the Bouncer uses 
+  - Another suggestion was made to "create wrapper functions for tests only" // not sure this is a good idea -- let's discuss
+
+  5. Judge Calibration & Validation
+
+  Problem: Who judges the judge?
+
+  Mitigation:
+  - Human review is what we will focus on. 
+  - The judge simply helps humans decide where to focus, and we can calibrate the judge as we compare human review to judge score and judge rationale
+  - We should give the judge enough context to assess whether the agent made the right call (which tools to use and when, etc).
+  - We should give the judge enough context to assess the agent's tone and flow of conversation.
+
+
+  6. Test Coverage Gaps
+
+  Simulation tests are GREAT for:
+  - ✅ Happy path variations (different personalities)
+  - ✅ Tone consistency
+  - ✅ Conversation flow
+  - ✅ Context retention
+
+  Simulation tests are POOR for:
+  - ❌ Edge cases (DB failures, API timeouts, malformed data)
+  - ❌ Specific tool behavior (email format validation)
+  - ❌ Error handling (what if Anthropic API is down?)
+  - ❌ Performance (does this scale?)
+  - ❌ Security (input validation, SQL injection)
+
+  Mitigation:
+  - Hybrid approach: Keep unit tests for edge cases, add simulation tests for integration
+  - Don't replace all tests - augment them
+
+
+  7. Re-engagement Timing Testing
+
+  Problem: How do you test "should re-engage after 24 hours"? // this is the hardest thing to get right i think -- and since we do a lot of re-engagement we need to figure it out.
+
+  - Need to mock system time
+  - Need to simulate passage of time 
+    - message timestamps will need to look like they were in the past in order for the agent to correctly assess passage of time.
+  - Need to handle scheduled tasks in test environment
+
+  Mitigation:
+  - Create test utilities to manipulate timestamps // these should ONLY be able to touch the test db. if we modify message timestamps in a given conversation, we would need to ensure we modify them all by an equal amount to preserve message order.
+  - Mock Date.now() for time-sensitive tests
+  - Trigger scheduled tasks programmatically in tests
+
+
+8. Local Supabase Complexity // we will use hosted supabase for test db
+
+9. CI/CD Integration // let's not make this part of CI / CD at all. we can run these tests periodically when we want, and we will not use them on every PR 
+
+10. Test Organization // unit tests can live in the agent files like /packages/agents/bouncer/__tests__ while e2e simulation tests can live in Yachtparty v.2/Testing because a given synthetic user will work with multiple agents in their progression 

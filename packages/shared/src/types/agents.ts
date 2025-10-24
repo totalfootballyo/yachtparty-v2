@@ -270,6 +270,7 @@ export type AgentActionType =
   | 'update_user_field'
   | 'update_user_preferences'
   | 'mark_user_verified'
+  | 'onboarding_info_complete'
   | 'set_referrer'
   | 'store_name_dropped'
 
@@ -280,7 +281,15 @@ export type AgentActionType =
 
   // Introduction workflows
   | 'show_intro_opportunity'
-  | 'create_intro_opportunity'
+  | 'accept_intro_opportunity'
+  | 'decline_intro_opportunity'
+  | 'accept_connection_request'
+  | 'decline_connection_request'
+  | 'offer_introduction'
+  | 'accept_intro_offer'
+  | 'decline_intro_offer'
+  | 'confirm_intro_offer'
+  | 'request_connection'
   | 'accept_intro'
   | 'reject_intro'
   | 'schedule_intro'
@@ -716,6 +725,157 @@ export interface UserMessageBudget {
   hourly_limit: number;
   quiet_hours_enabled: boolean;
   created_at: string;
+}
+
+// ============================================================================
+// 2-LLM Architecture Types
+// ============================================================================
+
+/**
+ * Secondary context topics that users may ask about during interactions.
+ *
+ * Used to capture user questions/concerns that arise alongside the primary
+ * scenario/action. For example: user provides company info (primary) AND
+ * asks about data security (secondary).
+ *
+ * **Pattern Scaling:**
+ * - Bouncer: Single question (data_security, founders, etc.)
+ * - Concierge/Innovator: Multiple items (open requests, updates, opportunities)
+ */
+export type SecondaryContextTopic =
+  // General product questions
+  | 'what_is_yachtparty'
+  | 'data_security'
+  | 'approval_timeline'
+  | 'founders'
+  | 'introduction_process'
+  | 'next_steps'
+
+  // Concierge/Innovator specific (for future use)
+  | 'community_request_status'
+  | 'intro_opportunity_update'
+  | 'solution_research_update'
+  | 'credit_balance'
+  | 'other';
+
+/**
+ * Secondary context item structure.
+ *
+ * Represents a user concern or question that's NOT the primary action
+ * but should be acknowledged in the response.
+ *
+ * **Usage by Agent:**
+ * - **Bouncer**: Single user_question (e.g., asks about security while providing company info)
+ * - **Concierge**: Multiple items (e.g., acknowledge waiting request while presenting new opportunity)
+ * - **Innovator**: Multiple items (e.g., update on prospect A while asking about prospect B)
+ */
+export interface SecondaryContextItem {
+  /**
+   * Type of secondary concern.
+   */
+  topic: SecondaryContextTopic;
+
+  /**
+   * Brief suggested response (1 sentence max).
+   * Composed by Call 1, used by Call 2.
+   */
+  suggested_response?: string;
+
+  /**
+   * Related entity ID (for status updates, opportunity references, etc.).
+   */
+  reference_id?: string;
+
+  /**
+   * How critical is it to address this? Helps Call 2 prioritize.
+   */
+  urgency?: 'optional' | 'should_mention' | 'must_address';
+}
+
+/**
+ * Call 1 Decision Output (Extended for Multi-Priority Handling)
+ *
+ * This structure represents the output of Call 1 (Decision Layer) and
+ * defines the contract between Call 1 and Call 2 (Personality Layer).
+ *
+ * **Design Principle:**
+ * - `next_scenario` is determined by STATE MACHINE logic (missing data, workflow steps)
+ * - `secondary_context` captures additional user concerns to acknowledge
+ * - Call 2 receives both and weaves them into natural language
+ *
+ * **Pattern Scaling:**
+ * ```typescript
+ * // Bouncer (simple)
+ * {
+ *   next_scenario: 'request_email_verification',
+ *   secondary_context: [{ topic: 'data_security', suggested_response: '...' }]
+ * }
+ *
+ * // Concierge (complex)
+ * {
+ *   next_scenario: 'present_intro_opportunity',
+ *   secondary_context: [
+ *     { topic: 'community_request_status', reference_id: 'req-123', urgency: 'should_mention' },
+ *     { topic: 'solution_research_update', reference_id: 'sol-456', urgency: 'optional' }
+ *   ]
+ * }
+ * ```
+ */
+export interface Call1Decision {
+  /**
+   * Tools to execute (data collection, actions).
+   * These are executed BETWEEN Call 1 and Call 2.
+   */
+  tools_to_use: Array<{
+    tool_name: string;
+    tool_input: Record<string, any>;
+  }>;
+
+  /**
+   * Primary scenario to handle (determined by state machine).
+   * This is the MAIN action/flow step, not influenced by user questions.
+   */
+  next_scenario: string;
+
+  /**
+   * Brief context about what just happened (for Call 2).
+   * Example: "User provided CTO at SecureData Systems"
+   */
+  context_for_response: string;
+
+  /**
+   * Secondary context items to acknowledge (OPTIONAL).
+   * User questions, status updates, or other concerns that should be
+   * addressed alongside the primary scenario.
+   *
+   * **Simple case (Bouncer):** Usually 0-1 items
+   * **Complex case (Concierge/Innovator):** Could be 2-4 items
+   */
+  secondary_context?: SecondaryContextItem[];
+}
+
+/**
+ * Additional context passed to Call 2 (Personality Layer).
+ *
+ * Includes tool results and secondary context from Call 1.
+ * This is the complete structured data Call 2 needs to compose its response.
+ */
+export interface Call2AdditionalContext {
+  /**
+   * Results from tool execution (e.g., generated verification email).
+   */
+  [key: string]: any;
+
+  /**
+   * Generated verification email address (Bouncer-specific).
+   */
+  verificationEmail?: string;
+
+  /**
+   * Secondary context items from Call 1.
+   * Call 2 should acknowledge these while handling primary scenario.
+   */
+  secondaryContext?: SecondaryContextItem[];
 }
 
 // ============================================================================

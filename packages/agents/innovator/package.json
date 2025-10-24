@@ -11,14 +11,17 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
     "@anthropic-ai/sdk": "^0.20.0",
     "@yachtparty/shared": "file:../../shared",
     "@yachtparty/agent-concierge": "file:../concierge",
     "dotenv": "^16.3.1"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.10.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "typescript": "^5.3.0"
   },
   "keywords": [

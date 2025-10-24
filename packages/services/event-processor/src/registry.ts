@@ -31,6 +31,26 @@ import {
   handleAccountManagerComplete,
 } from './handlers/system-events';
 
+import {
+  handleIntroOpportunityCreated,
+  handleConnectionRequestCreated,
+  handleIntroOfferCreated,
+  handleIntroOfferAccepted,
+  handleIntroOpportunityAccepted,
+  handleIntroOpportunityDeclined,
+  handleConnectionRequestAccepted,
+  handleConnectionRequestDeclined,
+  handleIntroOfferDeclined,
+  handleIntroOpportunityCancelled,
+} from './handlers/intro-priority-handlers';
+
+import {
+  handleIntroOfferCompleted,
+  handleIntroOpportunityCompletedCredits,
+  handleConnectionRequestCompleted,
+  handleIntroOfferReminder,
+} from './handlers/intro-coordination-handlers';
+
 /**
  * Event handler registry
  * Maps event types to their handler functions
@@ -119,6 +139,97 @@ export function initializeHandlers(): void {
     'account_manager.processing.completed',
     handleAccountManagerComplete,
     'Logs Account Manager processing results'
+  );
+
+  // Intro Flow Priority Events
+  registerHandler(
+    'intro.opportunity_created',
+    handleIntroOpportunityCreated,
+    'Adds intro opportunity to connector\'s priorities'
+  );
+
+  registerHandler(
+    'connection.request_created',
+    handleConnectionRequestCreated,
+    'Adds connection request to introducee\'s priorities'
+  );
+
+  registerHandler(
+    'intro.offer_created',
+    handleIntroOfferCreated,
+    'Adds intro offer to introducee\'s priorities (Step 1: acceptance)'
+  );
+
+  registerHandler(
+    'intro.offer_accepted',
+    handleIntroOfferAccepted,
+    'Moves intro offer to offering_user\'s priorities for confirmation (Step 2)'
+  );
+
+  // Intro Flow State Transitions
+  registerHandler(
+    'intro.opportunity_accepted',
+    handleIntroOpportunityAccepted,
+    'Marks intro opportunity as actioned in priorities'
+  );
+
+  registerHandler(
+    'intro.opportunity_declined',
+    handleIntroOpportunityDeclined,
+    'Marks intro opportunity as expired in priorities'
+  );
+
+  registerHandler(
+    'intro.opportunity_completed',
+    handleIntroOpportunityCompletedCredits,
+    'Marks completed, pauses similar, awards credits, closes loop (comprehensive handler)'
+  );
+
+  registerHandler(
+    'connection.request_accepted',
+    handleConnectionRequestAccepted,
+    'Marks connection request as actioned in priorities'
+  );
+
+  registerHandler(
+    'connection.request_declined',
+    handleConnectionRequestDeclined,
+    'Marks connection request as expired in priorities'
+  );
+
+  registerHandler(
+    'intro.offer_declined',
+    handleIntroOfferDeclined,
+    'Marks intro offer as expired in priorities'
+  );
+
+  registerHandler(
+    'intro.offer_confirmed',
+    handleIntroOfferCompleted,
+    'Marks confirmation actioned, awards credits, closes loop (comprehensive handler)'
+  );
+
+  registerHandler(
+    'intro.opportunity_cancelled',
+    handleIntroOpportunityCancelled,
+    'Removes cancelled intro opportunity from priorities'
+  );
+
+  // Intro Flow Coordination (Agent of Humans)
+  // Note: Some events have coordinated handlers that handle both priority updates and additional logic
+  // intro.opportunity_completed → handled by handleIntroOpportunityCompletedCredits (priorities + credits + messages)
+  // intro.offer_confirmed → handled by handleIntroOfferCompleted (priorities + credits + messages)
+
+  registerHandler(
+    'connection.request_completed',
+    handleConnectionRequestCompleted,
+    'Closes loop with both parties when connection request completed'
+  );
+
+  registerHandler(
+    'intro.offer_reminder',
+    handleIntroOfferReminder,
+    'Sends confirmation reminder to connector 3 days after acceptance'
   );
 
   console.log(`✓ Registered ${eventHandlers.size} event handlers`);

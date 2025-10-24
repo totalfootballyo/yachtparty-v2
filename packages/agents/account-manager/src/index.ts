@@ -20,6 +20,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   createServiceClient,
   type User,
@@ -38,6 +39,12 @@ import {
   parseAccountManagerResponse,
   sanitizePriorityContent,
 } from './parsers';
+
+import {
+  loadIntroOpportunities,
+  loadConnectionRequests,
+  loadIntroOffers,
+} from './intro-prioritization';
 
 import type {
   AccountManagerContext,
@@ -58,6 +65,128 @@ const anthropic = new Anthropic({
 const MODEL = 'claude-3-5-sonnet-20241022';
 
 /**
+ * Calculate and update user priorities from all sources
+ *
+ * Combines priorities from:
+ * - Existing goals/challenges/opportunities (from LLM)
+ * - intro_opportunities (system-initiated connector requests)
+ * - connection_requests (requestor wants intro)
+ * - intro_offers (user offers introduction)
+ *
+ * @param userId - User ID
+ * @param supabase - Supabase client
+ * @returns Updated list of priorities
+ */
+export async function calculateUserPriorities(
+  userId: string,
+  supabase: SupabaseClient
+): Promise<void> {
+  console.log(`[Account Manager] Calculating priorities for user ${userId}`);
+
+  const allPriorities: Array<{
+    id: string;
+    score: number;
+    reason: string;
+    data: {
+      item_type: string;
+      item_id: string;
+      [key: string]: any;
+    };
+  }> = [];
+
+  // Load intro flow priorities
+  const introOpportunities = await loadIntroOpportunities(userId, supabase);
+  const connectionRequests = await loadConnectionRequests(userId, supabase);
+  const introOffers = await loadIntroOffers(userId, supabase);
+
+  allPriorities.push(...introOpportunities);
+  allPriorities.push(...connectionRequests);
+  allPriorities.push(...introOffers);
+
+  console.log(`[Account Manager] Loaded ${allPriorities.length} intro flow priorities`);
+
+  // Load existing LLM-based priorities (goals/challenges/opportunities)
+  const { data: existingPriorities, error: existingError } = await supabase
+    .from('user_priorities')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .in('item_type', ['goal', 'challenge', 'opportunity']);
+
+  if (existingError) {
+    console.error('[Account Manager] Error loading existing priorities:', existingError);
+  } else {
+    // Add existing priorities with their scores
+    (existingPriorities || []).forEach((p: any) => {
+      allPriorities.push({
+        id: p.id,
+        score: p.value_score || 50,
+        reason: p.content || `${p.item_type} priority`,
+        data: {
+          item_type: p.item_type,
+          item_id: p.item_id || p.id,
+          content: p.content,
+          ...p.metadata,
+        },
+      });
+    });
+  }
+
+  console.log(`[Account Manager] Total ${allPriorities.length} priorities before sorting`);
+
+  // Sort by score (highest first)
+  allPriorities.sort((a, b) => b.score - a.score);
+
+  // Take top 10 (was 5, but with intro flows we might have more high-value items)
+  const topPriorities = allPriorities.slice(0, 10);
+
+  console.log(
+    `[Account Manager] Top 10 priorities:`,
+    topPriorities.map((p) => `${p.data.item_type} (${p.score})`)
+  );
+
+  // Clear existing intro flow priorities (we'll re-insert fresh ones)
+  await supabase
+    .from('user_priorities')
+    .delete()
+    .eq('user_id', userId)
+    .in('item_type', ['intro_opportunity', 'connection_request', 'intro_offer']);
+
+  // Insert new intro flow priorities
+  for (const priority of topPriorities) {
+    // Skip if it's an existing LLM priority (already in DB)
+    if (
+      ['goal', 'challenge', 'opportunity'].includes(priority.data.item_type)
+    ) {
+      // Update score if needed
+      await supabase
+        .from('user_priorities')
+        .update({ value_score: priority.score })
+        .eq('id', priority.id);
+      continue;
+    }
+
+    // Insert new intro flow priority
+    const { error: insertError } = await supabase.from('user_priorities').insert({
+      user_id: userId,
+      priority_rank: topPriorities.indexOf(priority) + 1,
+      item_type: priority.data.item_type,
+      item_id: priority.data.item_id,
+      value_score: priority.score,
+      status: 'active',
+      content: priority.reason,
+      metadata: priority.data,
+    });
+
+    if (insertError) {
+      console.error('[Account Manager] Error inserting priority:', insertError);
+    }
+  }
+
+  console.log(`[Account Manager] Inserted ${topPriorities.length} priorities into user_priorities table`);
+}
+
+/**
  * Main entry point for Account Manager Agent.
  *
  * This function is invoked when:
@@ -76,10 +205,11 @@ export async function invokeAccountManagerAgent(
   _message: Message,
   user: User,
   conversation: Conversation,
-  context?: AccountManagerContext
+  context?: AccountManagerContext,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<AccountManagerResponse> {
   const startTime = Date.now();
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   console.log(
     `[Account Manager] Invoked for user ${user.id}, trigger: ${context?.trigger || 'unknown'}`
@@ -186,6 +316,9 @@ export async function invokeAccountManagerAgent(
       await executeAction(action, user.id, supabase);
     }
 
+    // Calculate and update priorities from all sources (including intro flows)
+    await calculateUserPriorities(user.id, supabase);
+
     // Publish priority update event for Concierge (simplified architecture)
     // Concierge will decide when/how to notify user
     const { data: updatedPriorities } = await supabase
@@ -244,7 +377,7 @@ export async function invokeAccountManagerAgent(
         actionsCount: actions.length,
         responseText: textContent.text,
       },
-    });
+    }, dbClient);
 
     console.log(
       `[Account Manager] Completed in ${Date.now() - startTime}ms, ${actions.length} actions`
@@ -266,7 +399,7 @@ export async function invokeAccountManagerAgent(
       conversationId: conversation.id,
       latencyMs: Date.now() - startTime,
       error: error instanceof Error ? error.message : String(error),
-    });
+    }, dbClient);
 
     // Return empty response on error
     return {
@@ -326,7 +459,8 @@ function calculateDaysSinceLastUpdate(priorities: UserPriority[]): number {
 /**
  * Executes an action (updates database)
  */
-async function executeAction(action: any, userId: string, supabase: any): Promise<void> {
+async function executeAction(action: any, userId: string, dbClient: SupabaseClient): Promise<void> {
+  const supabase = dbClient;
   console.log(`[Account Manager] Executing action: ${action.type}`);
 
   switch (action.type) {
@@ -455,8 +589,8 @@ async function logAgentAction(params: {
   inputData?: any;
   outputData?: any;
   error?: string;
-}): Promise<void> {
-  const supabase = createServiceClient();
+}, dbClient: SupabaseClient = createServiceClient()): Promise<void> {
+  const supabase = dbClient;
 
   await supabase.from('agent_actions_log').insert({
     agent_type: params.agentType,
@@ -493,6 +627,14 @@ function calculateCost(inputTokens: number, outputTokens: number): number {
  * Export as default for Cloud Run service
  */
 export default invokeAccountManagerAgent;
+
+/**
+ * Export intro flow handlers for use by event processors
+ */
+export {
+  handleIntroOpportunityAccepted,
+  handleIntroOpportunityCompleted,
+} from './intro-prioritization';
 
 /**
  * Export types for use by other modules

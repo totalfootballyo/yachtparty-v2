@@ -7,6 +7,8 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.test
+Testing/.env.test
 
 # Build outputs
 dist/
@@ -35,6 +37,9 @@ Thumbs.db
 # Test coverage
 coverage/
 .nyc_output/
+
+# Test outputs
+Testing/transcripts/
 
 # Temporary files
 tmp/

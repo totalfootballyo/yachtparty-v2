@@ -8,6 +8,7 @@
  */
 
 import { createServiceClient } from './supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { findMatchingProspects } from './prospect-matching';
 import type { ProspectMatch } from './prospect-matching';
 import { publishEvent } from './events';
@@ -45,12 +46,14 @@ export interface ProspectUpgradeResult {
  * Note: If multiple innovators uploaded the same prospect, ALL get intro opportunities.
  *
  * @param userId - User ID of the newly joined user
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns Upgrade result with match details
  */
 export async function upgradeProspectsToUser(
-  userId: string
+  userId: string,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<ProspectUpgradeResult> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   try {
     // 1. Fetch user record
@@ -221,7 +224,7 @@ export async function upgradeProspectsToUser(
             intro_opportunity_id: introOpportunity.id
           },
           created_by: 'system'
-        });
+        }, dbClient);
 
         await publishEvent({
           event_type: 'intro.opportunity_created',
@@ -234,7 +237,7 @@ export async function upgradeProspectsToUser(
             from_prospect_upgrade: true
           },
           created_by: 'system'
-        });
+        }, dbClient);
 
         results.push({
           prospectId: prospect.id,
@@ -279,12 +282,14 @@ export async function upgradeProspectsToUser(
  * - Has not been checked for prospect matches before
  *
  * @param userId - User ID to check
+ * @param dbClient - Optional Supabase client (defaults to production)
  * @returns True if upgrade should be triggered
  */
 export async function shouldTriggerProspectUpgrade(
-  userId: string
+  userId: string,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<boolean> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   const { data: user, error } = await supabase
     .from('users')
@@ -321,11 +326,13 @@ export async function shouldTriggerProspectUpgrade(
  * Sets metadata flag to prevent duplicate processing.
  *
  * @param userId - User ID to mark
+ * @param dbClient - Optional Supabase client (defaults to production)
  */
 export async function markProspectUpgradeChecked(
-  userId: string
+  userId: string,
+  dbClient: SupabaseClient = createServiceClient()
 ): Promise<void> {
-  const supabase = createServiceClient();
+  const supabase = dbClient;
 
   const { data: user } = await supabase
     .from('users')

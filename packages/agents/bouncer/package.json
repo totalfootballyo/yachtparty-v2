@@ -8,6 +8,7 @@
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
+    "test": "jest",
     "test-chat": "tsx test-chat.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
@@ -27,7 +28,11 @@
     "@yachtparty/shared": "file:../../shared"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.10.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   },

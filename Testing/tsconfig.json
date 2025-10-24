@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "outDir": "./dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "types": ["node", "jest"],
+    "baseUrl": ".",
+    "paths": {
+      "@yachtparty/shared": ["../packages/shared/src/index.ts"],
+      "@yachtparty/shared/*": ["../packages/shared/src/*"],
+      "@yachtparty/agent-bouncer": ["../packages/agents/bouncer/src/index.ts"],
+      "@yachtparty/agent-concierge": ["../packages/agents/concierge/src/index.ts"],
+      "@yachtparty/agent-innovator": ["../packages/agents/innovator/src/index.ts"]
+    }
+  },
+  "include": [
+    "**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}
