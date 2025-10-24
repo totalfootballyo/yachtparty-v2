@@ -17,13 +17,7 @@ import type { Message, User, UserPriority } from '@yachtparty/shared';
  */
 export interface InnovatorContext {
   recentMessages: Message[];
-  userPriorities: Array<{
-    id: string;
-    item_type: string;
-    item_id: string;
-    value_score?: number | null;
-    status: string;
-  }>;
+  userPriorities: UserPriority[];
   outstandingCommunityRequests: Array<{
     id: string;
     question: string;
@@ -85,18 +79,49 @@ export interface Call1Output {
     | 'multi_thread_response'
     | 'community_request_followup'
     | 'priority_update'
+    | 'response_with_proactive_priority' // NEW - Appendix E
     | 'general_response'
+    | 'request_clarification' // NEW - Appendix E
     | 'no_message';
 
   context_for_call_2: {
     primary_topic: string;
+    primary_response_guidance?: string; // NEW - Appendix E: Dry answer from Call 1
     tone: 'helpful' | 'informative' | 'reassuring' | 'professional';
     message_structure?: 'single' | 'sequence_2' | 'sequence_3';
     secondary_topics?: string[];
+
+    // Intent tracking (NEW - Appendix E)
+    user_responding_to?: {
+      item_type: string;
+      item_id: string;
+      confidence: 'high' | 'medium' | 'low';
+    } | null;
+
+    // Proactive priority presentation (NEW - Appendix E)
+    proactive_priority?: {
+      item_type: 'intro_opportunity' | 'connection_request' | 'community_request';
+      item_id: string;
+      summary: string;
+      transition_phrase: string;
+      should_mention: boolean;
+      reason?: string;
+    };
+
     personalization_hooks?: {
       user_name?: string;
       recent_context?: string;
       emotional_state?: 'eager' | 'patient' | 'frustrated' | 'overwhelmed';
+    };
+
+    // Clarification support (NEW - Appendix E)
+    clarification_needed?: {
+      ambiguous_request: string;
+      possible_interpretations: Array<{
+        label: string;
+        description: string;
+        would_trigger_tool?: string;
+      }>;
     };
   };
 }
@@ -266,9 +291,19 @@ If Innovator wants to directly request an intro to a platform user:
 → Use request_connection (creates connection_request for introducee to review)
 
 CONTEXT:
-Recent messages (last 5): ${JSON.stringify(context.recentMessages.map(m => ({ role: m.role, content: m.content })), null, 2)}
+Recent messages (last 10 with timestamps):
+${context.recentMessages.slice(-10).map(m => `[${m.role}] (${new Date(m.created_at).toLocaleString()}): ${m.content}`).join('\n')}
 
-User priorities: ${JSON.stringify(context.userPriorities, null, 2)}
+User priorities (denormalized for fast intent matching):
+${context.userPriorities.map((p, idx) => {
+  let details = `${idx + 1}. **${p.item_type}** (ID: ${p.item_id}, Rank: ${p.priority_rank}, Presented: ${p.presentation_count || 0}x)`;
+  if (p.item_summary) details += `\n   Summary: ${p.item_summary}`;
+  if (p.item_primary_name) details += `\n   Primary: ${p.item_primary_name}`;
+  if (p.item_secondary_name) details += `\n   Secondary: ${p.item_secondary_name}`;
+  if (p.item_context) details += `\n   Context: ${p.item_context}`;
+  if (p.item_metadata) details += `\n   Metadata: ${JSON.stringify(p.item_metadata)}`;
+  return details;
+}).join('\n\n')}
 
 Outstanding community requests: ${JSON.stringify(context.outstandingCommunityRequests, null, 2)}
 
@@ -278,13 +313,88 @@ Pending intros: ${JSON.stringify(context.pendingIntros || [], null, 2)}
 
 Credit balance: ${context.creditBalance || 0}
 
+## CRITICAL: Determining User Intent & Context
+
+When a user sends a message, you MUST carefully analyze WHAT they are talking about.
+
+### Reading Conversation Flow
+
+1. **Review recent messages (last 10) with timestamps**
+   - What topics were discussed?
+   - What questions did you ask?
+   - What priorities did you present to this user?
+
+2. **Identify the user's intent**
+   - Is the user clearly responding to a specific item you presented?
+   - Is the user introducing a new topic entirely?
+   - Is the user's message ambiguous (could apply to multiple items)?
+
+3. **Match response to specific priorities (if applicable)**
+   - You have access to the user's current priorities (from Account Manager)
+   - Each priority has details: names, topics, context
+   - Use these details to determine if user is addressing a specific priority
+   - Look for keywords, names, topics that match
+
+### CORRECT - Specific Intent Identified:
+
+Recent context:
+- You (yesterday 3pm): "I found 3 people who responded to your CTO hiring question. I'll send details."
+- You (yesterday 3:05pm): "Also, Ben offered to intro you to Jim James at ABC Corp for CTV attribution. Interested?"
+
+User (today 9am): "Yes please, send me those 3 people!"
+
+✅ CORRECT INTERPRETATION:
+- User is responding to: community_request (CTO hiring question)
+- User is NOT responding to: intro_opportunity (Jim James intro)
+- Output: user_responding_to = { item_type: "community_request", item_id: "...", confidence: "high" }
+- Use tool: respond_to_community_request (or relevant tool)
+- Do NOT mark intro_opportunity as actioned
+
+### CORRECT - No Specific Intent (New Topic):
+
+Recent context:
+- User had 3 open priorities: hiring CTO, intro to Sarah Chen, meet Rob from MediaMath
+
+User (today): "Can you help me find a marketing agency?"
+
+✅ CORRECT INTERPRETATION:
+- User is NOT responding to any existing priority
+- User is introducing a NEW topic (marketing agency search)
+- Output: user_responding_to = null
+- Consider: proactive_priority (mention one of the 3 open items if appropriate)
+- Use tool: request_solution_research OR publish_community_request
+
+### INCORRECT - Marking Everything as Actioned:
+
+❌ WRONG: User sent a message, so mark ALL 3 priorities as actioned
+- This is INCORRECT - user didn't address any of them
+- Result: System "forgets" about legitimate open priorities
+- Never do this. Only mark priorities as actioned when user EXPLICITLY addresses them.
+
+### When to Include Proactive Priority
+
+**DO mention a proactive priority if:**
+- ✅ User's message is about a DIFFERENT topic (not the priority you want to mention)
+- ✅ User seems engaged and responsive (not stressed/short)
+- ✅ Priority has high value_score (>70)
+- ✅ It's been >3 days since last presentation
+- ✅ You can introduce it naturally with "While I have you..."
+
+**DON'T mention proactive priority if:**
+- ❌ User's message indicates urgency or stress
+- ❌ User explicitly said "just answer my question"
+- ❌ You already presented this priority in last 2 messages
+- ❌ User is clearly disengaged (one-word answers)
+
 DECISION PROCESS:
 1. What is the user asking for?
-2. Which tool(s) should be executed?
-3. What are the complete parameters for each tool?
-4. What scenario does this create for Call 2?
-5. What tone should Call 2 use?
-6. What's the primary topic Call 2 should address?
+2. **INTENT CHECK**: Is user responding to a specific priority OR introducing new topic?
+3. Which tool(s) should be executed?
+4. What are the complete parameters for each tool?
+5. Should we mention a proactive priority (different from main topic)?
+6. What scenario does this create for Call 2?
+7. What tone should Call 2 use?
+8. What's the primary topic Call 2 should address?
 
 OUTPUT FORMAT (JSON):
 {
@@ -300,7 +410,24 @@ OUTPUT FORMAT (JSON):
   "next_scenario": "scenario_name",
   "context_for_call_2": {
     "primary_topic": "what the user asked about",
+    "primary_response_guidance": "Dry, factual answer to user's question (NEW - Appendix E)",
     "tone": "helpful|informative|reassuring|professional",
+
+    "user_responding_to": {
+      "item_type": "intro_opportunity",
+      "item_id": "uuid-123",
+      "confidence": "high"
+    } OR null,
+
+    "proactive_priority": {
+      "item_type": "connection_request",
+      "item_id": "uuid-456",
+      "summary": "Rob from MediaMath wants to connect about CTV attribution",
+      "transition_phrase": "While I have you",
+      "should_mention": true,
+      "reason": "User seems engaged, different topic, high value"
+    } OR omit if no proactive priority,
+
     "personalization_hooks": {
       "user_name": "${context.user.first_name}",
       "recent_context": "any relevant context from conversation"
@@ -318,6 +445,8 @@ SCENARIOS FOR CALL 2:
 - prospect_upload_guidance: User wants to upload prospects
 - intro_progress_report: User asked about intro status
 - credit_funding_offer: User needs credits
+- response_with_proactive_priority: Answer question + mention a priority (NEW - Appendix E)
+- request_clarification: User's intent is ambiguous (NEW - Appendix E)
 - general_response: Catch-all for other interactions
 
 IMPORTANT:

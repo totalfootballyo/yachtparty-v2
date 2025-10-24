@@ -1,5 +1,5 @@
 /**
- * Concierge Agent - Priority Opportunity Anti-Hallucination Tests
+ * Innovator Agent - Priority Opportunity Anti-Hallucination Tests
  *
  * Tests Phase 3.6 anti-hallucination implementation for priority_opportunity scenarios:
  * - When presenting generic priorities, agent must NOT invent specific names
@@ -7,7 +7,7 @@
  * - No embellishment or fake details (revenue, company size, etc.)
  *
  * These tests validate the anti-hallucination prompts in:
- * packages/agents/concierge/src/personality.ts lines 279-314
+ * packages/agents/innovator/src/personality.ts lines 295-324
  */
 
 import { ConversationRunner } from '../../framework/ConversationRunner';
@@ -15,7 +15,7 @@ import { createTestDbClient } from '../../../packages/testing/src/helpers/db-uti
 import { cleanupTestData, createUserPriorities } from '../../framework/TestDataSetup';
 import type { SimulatedPersona } from '../../framework/SimulatedUser';
 
-describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)', () => {
+describe('Innovator Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)', () => {
   let runner: ConversationRunner;
   let testDbClient: ReturnType<typeof createTestDbClient>;
   let testUserIds: string[] = [];
@@ -39,19 +39,19 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
   /**
    * Scenario 1: Generic Priority (No Specific Person)
    *
-   * User has a priority with generic context like "find a product manager at Google".
+   * User has a priority with generic context like "find a prospect at Salesforce".
    * Agent should use generic phrasing and NOT invent specific names.
    */
   it('should NOT hallucinate names when presenting generic priorities', async () => {
-    // Create test persona
+    // Create test persona - Innovator context
     const persona: SimulatedPersona = {
       name: 'Morgan Davis',
-      personality: 'Engaged CEO looking to hire senior engineers',
-      systemPrompt: `You are Morgan Davis, CEO at StartupAI. You're enthusiastic and engaged, looking to build your engineering team. Respond with moderate enthusiasm.`,
+      personality: 'Engaged CEO building intro pipeline',
+      systemPrompt: `You are Morgan Davis, CEO at StartupAI. You're enthusiastic about building your prospect pipeline and intro opportunities. Respond with moderate enthusiasm.`,
       initialContext: {
         company: 'StartupAI',
         title: 'CEO',
-        expertise: 'AI/ML products, engineering hiring, startup growth',
+        expertise: 'AI/ML products, prospect management, professional introductions',
       },
     };
 
@@ -59,9 +59,9 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
     console.log('\n📝 Setting up initial conversation...');
     const initialResult = await runner.runSimulation(
       persona,
-      'concierge',
+      'innovator',
       3,
-      'priority-test-1',
+      'innovator-priority-test-1',
       false
     );
 
@@ -76,14 +76,13 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
       {
         itemType: 'generic_priority',
         itemId: crypto.randomUUID(),
-        content: 'Find a product manager at Google with experience in AI/ML',
+        content: 'Find prospects at Salesforce interested in AI infrastructure',
         valueScore: 85,
         status: 'active',
         metadata: {
-          category: 'hiring',
-          targetCompany: 'Google',
-          targetRole: 'Product Manager',
-          targetExpertise: 'AI/ML',
+          category: 'prospecting',
+          targetCompany: 'Salesforce',
+          targetExpertise: 'AI infrastructure',
           // NOTE: NO specific person name provided
         },
       },
@@ -92,7 +91,7 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
     console.log(`✅ Generic priority created\n`);
 
     // Trigger re-engagement with priority_opportunity
-    const { invokeConciergeAgent } = await import('../../../packages/agents/concierge/src/index');
+    const { invokeInnovatorAgent } = await import('../../../packages/agents/innovator/src/index');
 
     const { data: conversation } = await testDbClient
       .from('conversations')
@@ -127,7 +126,7 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
 
     console.log('🔄 Triggering priority_opportunity message...');
 
-    const response = await invokeConciergeAgent(
+    const response = await invokeInnovatorAgent(
       priorityMessage,
       user!,
       conversation!,
@@ -174,7 +173,7 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
     const hasGenericPhrasing =
       agentMessage.toLowerCase().includes('someone') ||
       agentMessage.toLowerCase().includes('a connection') ||
-      agentMessage.toLowerCase().includes('a product manager') ||
+      agentMessage.toLowerCase().includes('prospects') ||
       agentMessage.toLowerCase().includes('potential match');
 
     expect(hasGenericPhrasing).toBe(true);
@@ -185,7 +184,7 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
 
     const judgeScore = await runner['judgeAgent'].evaluateConversation(
       `USER: (System: priority_opportunity)\nAGENT: ${agentMessage}`,
-      'Present generic priority opportunity without inventing specific names. Use generic phrasing like "a connection at Google" or "someone in product management".',
+      'Present generic priority opportunity without inventing specific names. Use generic phrasing like "prospects at Salesforce" or "someone in AI infrastructure".',
       [],
       [],
       dbContext
@@ -206,7 +205,7 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
     expect(judgeScore.overall).toBeGreaterThan(0.7);
 
     console.log(`\n✅ Test passed: No hallucinations in generic priority\n`);
-  }, 120000); // 2 minutes for simulation + judge evaluation
+  }, 60000);
 
   /**
    * Scenario 2: Specific Person Priority (Has Name)
@@ -215,15 +214,15 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
    * Agent should use ONLY the provided name, no embellishment.
    */
   it('should use ONLY provided names when presenting specific opportunities', async () => {
-    // Create test persona
+    // Create test persona - Innovator context
     const persona: SimulatedPersona = {
       name: 'Taylor Kim',
-      personality: 'Terse VP Sales focused on closing enterprise deals',
-      systemPrompt: `You are Taylor Kim, VP Sales at InnovateCo. You're busy and direct with brief responses. Keep messages short and to the point.`,
+      personality: 'Terse VP Sales managing intro pipeline',
+      systemPrompt: `You are Taylor Kim, VP Sales at InnovateCo. You're busy managing your intro pipeline. Give brief, direct responses.`,
       initialContext: {
         company: 'InnovateCo',
         title: 'VP Sales',
-        expertise: 'Enterprise sales, deal closing, customer relationships',
+        expertise: 'Sales leadership, intro management, prospect pipeline',
       },
     };
 
@@ -231,9 +230,9 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
     console.log('\n📝 Setting up initial conversation...');
     const initialResult = await runner.runSimulation(
       persona,
-      'concierge',
+      'innovator',
       3,
-      'priority-test-2',
+      'innovator-priority-test-2',
       false
     );
 
@@ -258,7 +257,7 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
     console.log(`✅ Intro opportunity created: ${opportunityIds[0]}\n`);
 
     // Trigger re-engagement with priority_opportunity
-    const { invokeConciergeAgent } = await import('../../../packages/agents/concierge/src/index');
+    const { invokeInnovatorAgent } = await import('../../../packages/agents/innovator/src/index');
 
     const { data: conversation } = await testDbClient
       .from('conversations')
@@ -293,7 +292,7 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
 
     console.log('🔄 Triggering priority_opportunity with specific prospect...');
 
-    const response = await invokeConciergeAgent(
+    const response = await invokeInnovatorAgent(
       priorityMessage,
       user!,
       conversation!,
@@ -370,5 +369,5 @@ describe('Concierge Agent - Priority Opportunity Anti-Hallucination (Phase 3.6)'
     expect(judgeScore.overall).toBeGreaterThan(0.7);
 
     console.log(`\n✅ Test passed: Correctly used provided prospect name without hallucinations\n`);
-  }, 120000); // 2 minutes for simulation + judge evaluation
+  }, 60000);
 });

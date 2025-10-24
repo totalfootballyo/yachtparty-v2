@@ -1,0 +1,491 @@
+
+> yachtparty-e2e-tests@0.1.0 test
+> jest scenarios/account-manager/
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+    ✅ Test user created: 1e3949d1-07c4-46eb-a578-0f920460db56
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:51:13)
+
+  console.log
+    ✅ Test user created: 506f4f78-3740-4ca4-b71e-232cc132f5cf
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:61:13)
+
+  console.error
+    [TestDataSetup] Error creating test prospect: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'name' column of 'prospects' in the schema cache"
+    }
+
+      40 |
+      41 |   if (prospectError || !prospect) {
+    > 42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+         |             ^
+      43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+      44 |   }
+      45 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:42:13)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:57:28)
+
+  console.error
+    [TestDataSetup] Error creating test prospect: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'name' column of 'prospects' in the schema cache"
+    }
+
+      40 |
+      41 |   if (prospectError || !prospect) {
+    > 42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+         |             ^
+      43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+      44 |   }
+      45 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:42:13)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:64:28)
+
+  console.log
+    ✅ Test user created: a30b8502-aad2-4499-b6cc-db0faad0b793
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:161:13)
+
+  console.error
+    [TestDataSetup] Error creating test prospect: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'name' column of 'prospects' in the schema cache"
+    }
+
+      40 |
+      41 |   if (prospectError || !prospect) {
+    > 42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+         |             ^
+      43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+      44 |   }
+      45 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:42:13)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:166:28)
+
+  console.log
+    ✅ Test user created: 3b8313ff-afb0-477a-baca-706f002d680a
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:176:13)
+
+  console.log
+    ✅ Test user created: 728cfeb5-0907-4ae5-9cc5-04b591c30b38
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:276:13)
+
+  console.log
+    [TestDataSetup] Created connection_request 68ef5025-fd3d-40d6-8fb2-109df2ef0f60
+
+      at createConnectionRequests (framework/TestDataSetup.ts:119:15)
+
+  console.error
+    [TestDataSetup] Error creating test prospect: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'name' column of 'prospects' in the schema cache"
+    }
+
+      40 |
+      41 |   if (prospectError || !prospect) {
+    > 42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+         |             ^
+      43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+      44 |   }
+      45 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:42:13)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:279:28)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 1e3949d1-07c4-46eb-a578-0f920460db56
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [TestDataSetup] Created connection_request 5ebdb542-5224-4874-9409-2b9cedf18ef5
+
+      at createConnectionRequests (framework/TestDataSetup.ts:119:15)
+
+  console.log
+    ✅ Created 2 connection requests
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:205:13)
+
+  console.log
+    [Account Manager] Calculating priorities for user d23fadbc-fde7-43bd-a144-4aac69065420
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.log
+    [Account Manager] Loaded 2 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 2 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [ 'connection_request (139)', 'connection_request (85)' ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user a30b8502-aad2-4499-b6cc-db0faad0b793
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [Account Manager] Inserted 2 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    
+    📊 Connection Request Rankings:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:222:13)
+
+  console.log
+      1. Connection request: Requestor B wants to meet you (3 vouches) (score: 139)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:224:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. Connection request: Requestor A wants to meet you (score: 85)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:224:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    
+    ✅ Vouched request (B) scored 139 vs 85 for non-vouched (A)
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:235:13)
+
+  console.log
+    ✅ Vouching provides significant boost (+60 points for 3 vouches)
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:238:13)
+
+  console.log
+    ✅ Test users created
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:272:13)
+
+  console.log
+    [TestDataSetup] Created intro_offer 0a614585-875d-4497-a0cd-b252f4722564
+
+      at createIntroOffers (framework/TestDataSetup.ts:173:15)
+
+  console.log
+    [TestDataSetup] Created intro_offer 71521271-d07e-4ca3-85f3-90576006a6a8
+
+      at createIntroOffers (framework/TestDataSetup.ts:173:15)
+
+  console.log
+    ✅ Created 2 intro offers
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:300:13)
+
+  console.log
+    [Account Manager] Calculating priorities for user b7bdbed4-2bc3-44e2-84bc-a740322561b6
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 728cfeb5-0907-4ae5-9cc5-04b591c30b38
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [Account Manager] Loaded 2 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 2 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [ 'intro_offer (90)', 'intro_offer (85)' ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.log
+    [Account Manager] Inserted 2 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    
+    📊 Intro Offer Rankings for user1:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:317:13)
+
+  console.log
+      1. Intro offer: null can introduce you to Prospect X (50 credits) (score: 90)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:319:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. Confirm intro: null accepted your offer to meet Prospect Y (score: 85)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:319:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+FAIL scenarios/account-manager/state-transitions.test.ts
+  Account Manager - State Transitions (Phase 3.4)
+    ✕ should pause competing opportunities when one is accepted (755 ms)
+    ✕ should cancel paused opportunities when accepted one is completed (131 ms)
+    ✕ should handle accept/complete gracefully with no competing opportunities (130 ms)
+
+  ● Account Manager - State Transitions (Phase 3.4) › should pause competing opportunities when one is accepted
+
+    Failed to create test prospect for intro_opportunities
+
+      41 |   if (prospectError || !prospect) {
+      42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+    > 43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+         |           ^
+      44 |   }
+      45 |
+      46 |   const testProspectId = prospect.id;
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:43:11)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:57:28)
+
+  ● Account Manager - State Transitions (Phase 3.4) › should cancel paused opportunities when accepted one is completed
+
+    Failed to create test prospect for intro_opportunities
+
+      41 |   if (prospectError || !prospect) {
+      42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+    > 43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+         |           ^
+      44 |   }
+      45 |
+      46 |   const testProspectId = prospect.id;
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:43:11)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:166:28)
+
+  ● Account Manager - State Transitions (Phase 3.4) › should handle accept/complete gracefully with no competing opportunities
+
+    Failed to create test prospect for intro_opportunities
+
+      41 |   if (prospectError || !prospect) {
+      42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+    > 43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+         |           ^
+      44 |   }
+      45 |
+      46 |   const testProspectId = prospect.id;
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:43:11)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:279:28)
+
+  console.log
+    ✅ Test user created
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:356:13)
+
+  console.error
+    [TestDataSetup] Error creating test prospect: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'name' column of 'prospects' in the schema cache"
+    }
+
+      40 |
+      41 |   if (prospectError || !prospect) {
+    > 42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+         |             ^
+      43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+      44 |   }
+      45 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:42:13)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:359:5)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 506f4f78-3740-4ca4-b71e-232cc132f5cf
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 3b8313ff-afb0-477a-baca-706f002d680a
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user f92165c0-c188-4894-8472-13e9ac71aa4a
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 9cb2ea7e-980e-4b7a-bfd4-29c03577b489
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 6f91c9b3-32ae-47c8-ad29-ed0de32e7f9a
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 535cb141-a92e-4462-b439-352bd6ce8eb5
+
+      at cleanupTestData (framework/TestDataSetup.ts:349:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:363:11)
+
+FAIL scenarios/account-manager/intro-flow-prioritization.test.ts (8.155 s)
+  Account Manager - Intro Flow Prioritization (Phase 3.4)
+    ✕ should score intro opportunities by bounty + connection strength + recency (772 ms)
+    ✓ should score connection requests with vouching significantly higher (1147 ms)
+    ✕ should prioritize connector role over introducee role in intro offers (1012 ms)
+    ✕ should combine and rank all priority types together (139 ms)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should score intro opportunities by bounty + connection strength + recency
+
+    Failed to create test prospect for intro_opportunities
+
+      41 |   if (prospectError || !prospect) {
+      42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+    > 43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+         |           ^
+      44 |   }
+      45 |
+      46 |   const testProspectId = prospect.id;
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:43:11)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:64:28)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should prioritize connector role over introducee role in intro offers
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 90
+    Received:   85
+
+      327 |     const introduceePriority = priorities?.find(p => p.content.includes('Prospect X'));
+      328 |
+    > 329 |     expect(connectorPriority?.value_score).toBeGreaterThan(introduceePriority?.value_score || 0);
+          |                                            ^
+      330 |     console.log(
+      331 |       `\n✅ Connector role (Y) scored ${connectorPriority?.value_score} vs ${introduceePriority?.value_score} for introducee role (X)`
+      332 |     );
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:329:44)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should combine and rank all priority types together
+
+    Failed to create test prospect for intro_opportunities
+
+      41 |   if (prospectError || !prospect) {
+      42 |     console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+    > 43 |     throw new Error('Failed to create test prospect for intro_opportunities');
+         |           ^
+      44 |   }
+      45 |
+      46 |   const testProspectId = prospect.id;
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:43:11)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:359:5)
+
+Test Suites: 2 failed, 2 total
+Tests:       6 failed, 1 passed, 7 total
+Snapshots:   0 total
+Time:        8.489 s, estimated 10 s
+Ran all test suites matching /scenarios\/account-manager\//i.

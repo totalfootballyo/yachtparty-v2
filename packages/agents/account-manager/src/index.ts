@@ -65,6 +65,138 @@ const anthropic = new Anthropic({
 const MODEL = 'claude-3-5-sonnet-20241022';
 
 /**
+ * Sync presentation counts and denormalized fields from source tables to user_priorities
+ *
+ * Part of Phase 6: Account Manager Integration (Appendix E)
+ *
+ * Populates denormalized fields for fast intent matching in Call 1:
+ * - item_summary: One-line summary of the priority
+ * - item_primary_name: Primary person (prospect/requestor/expert)
+ * - item_secondary_name: Secondary person (innovator/connector)
+ * - item_context: Context or reason
+ * - item_metadata: Additional structured data (bounty, vouches, category)
+ *
+ * @param userId - User ID
+ * @param supabase - Supabase client
+ */
+async function syncPresentationCounts(
+  userId: string,
+  supabase: SupabaseClient
+): Promise<void> {
+  console.log(`[Account Manager] Syncing presentation counts for user ${userId}`);
+
+  // Get all user priorities for this user
+  const { data: priorities, error: prioritiesError } = await supabase
+    .from('user_priorities')
+    .select('*')
+    .eq('user_id', userId)
+    .in('item_type', ['intro_opportunity', 'connection_request', 'community_request']);
+
+  if (prioritiesError) {
+    console.error('[Account Manager] Error loading priorities:', prioritiesError);
+    return;
+  }
+
+  if (!priorities || priorities.length === 0) {
+    console.log('[Account Manager] No priorities to sync');
+    return;
+  }
+
+  // Process each priority and update denormalized fields
+  for (const priority of priorities) {
+    let updateData: any = {};
+
+    if (priority.item_type === 'intro_opportunity') {
+      // Load intro_opportunity details
+      const { data: intro } = await supabase
+        .from('intro_opportunities')
+        .select('first_name, last_name, prospect_company, innovator_name, bounty_credits, presentation_count, last_presented_at')
+        .eq('id', priority.item_id)
+        .single();
+
+      if (intro) {
+        const prospectName = `${intro.first_name} ${intro.last_name}`.trim();
+        updateData = {
+          presentation_count: intro.presentation_count || 0,
+          presented_at: intro.last_presented_at,
+          item_summary: `Intro ${prospectName} at ${intro.prospect_company || 'their company'}`,
+          item_primary_name: prospectName, // The prospect
+          item_secondary_name: intro.innovator_name || null, // The innovator (if on platform)
+          item_context: `Earn ${intro.bounty_credits} credits`,
+          item_metadata: {
+            bounty_credits: intro.bounty_credits,
+            prospect_company: intro.prospect_company,
+          },
+        };
+      }
+    } else if (priority.item_type === 'connection_request') {
+      // Load connection_request details
+      const { data: conn } = await supabase
+        .from('connection_requests')
+        .select('requestor_name, requestor_company, intro_context, vouched_by_user_ids, presentation_count, last_presented_at')
+        .eq('id', priority.item_id)
+        .single();
+
+      if (conn) {
+        const vouchCount = conn.vouched_by_user_ids?.length || 0;
+        updateData = {
+          presentation_count: conn.presentation_count || 0,
+          presented_at: conn.last_presented_at,
+          item_summary: `${conn.requestor_name} wants to meet you`,
+          item_primary_name: conn.requestor_name, // The requestor
+          item_secondary_name: null, // No secondary for connection requests
+          item_context: conn.intro_context || 'Connection request',
+          item_metadata: {
+            requestor_company: conn.requestor_company,
+            vouch_count: vouchCount,
+          },
+        };
+      }
+    } else if (priority.item_type === 'community_request') {
+      // Load community_request details
+      const { data: comm } = await supabase
+        .from('community_requests')
+        .select('question, category, expertise_needed, presentation_count, last_presented_at')
+        .eq('id', priority.item_id)
+        .single();
+
+      if (comm) {
+        const questionPreview = comm.question?.length > 60
+          ? `${comm.question.substring(0, 60)}...`
+          : comm.question;
+
+        updateData = {
+          presentation_count: comm.presentation_count || 0,
+          presented_at: comm.last_presented_at,
+          item_summary: questionPreview || 'Community question',
+          item_primary_name: null, // No specific person for community requests
+          item_secondary_name: null,
+          item_context: comm.category || 'Expert input needed',
+          item_metadata: {
+            category: comm.category,
+            expertise_needed: comm.expertise_needed,
+          },
+        };
+      }
+    }
+
+    // Update user_priorities with denormalized data
+    if (Object.keys(updateData).length > 0) {
+      const { error: updateError } = await supabase
+        .from('user_priorities')
+        .update(updateData)
+        .eq('id', priority.id);
+
+      if (updateError) {
+        console.error(`[Account Manager] Error updating priority ${priority.id}:`, updateError);
+      }
+    }
+  }
+
+  console.log(`[Account Manager] Synced ${priorities.length} priorities`);
+}
+
+/**
  * Calculate and update user priorities from all sources
  *
  * Combines priorities from:
@@ -184,6 +316,9 @@ export async function calculateUserPriorities(
   }
 
   console.log(`[Account Manager] Inserted ${topPriorities.length} priorities into user_priorities table`);
+
+  // Phase 6: Sync presentation counts and denormalized fields
+  await syncPresentationCounts(userId, supabase);
 }
 
 /**

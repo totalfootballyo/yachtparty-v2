@@ -1,0 +1,486 @@
+
+> yachtparty-e2e-tests@0.1.0 test
+> jest scenarios/account-manager/
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+    ✅ Test user created: 2c24345b-fa75-4add-adbd-4be3bbd05f50
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:51:13)
+
+  console.log
+    ✅ Test user created: 4d6f4489-bf0d-4986-ab5e-68934d0f8b28
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:61:13)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: '23503',
+      details: 'Key (innovator_id)=(70745c89-0a92-4646-b4c7-a346d5e3bfd5) is not present in table "users".',
+      hint: null,
+      message: 'insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"'
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:64:28)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: '23503',
+      details: 'Key (innovator_id)=(c2c69f83-9cba-414d-9797-65bb82145dc8) is not present in table "users".',
+      hint: null,
+      message: 'insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"'
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:57:28)
+
+  console.log
+    ✅ Test user created: 90eebaa9-9b84-4ce5-89e5-3fbadf77dfc5
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:176:13)
+
+  console.log
+    ✅ Test user created: a50c3816-db37-4708-ab42-31506872b55e
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:161:13)
+
+  console.log
+    [TestDataSetup] Created connection_request 9917ddfc-901f-4963-931a-3909ce2fa452
+
+      at createConnectionRequests (framework/TestDataSetup.ts:102:15)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: '23503',
+      details: 'Key (innovator_id)=(66dd0dea-8c22-449a-adc4-d92e0b594096) is not present in table "users".',
+      hint: null,
+      message: 'insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"'
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:166:28)
+
+  console.log
+    ✅ Test user created: 0295f005-8863-41e2-995d-5ee50c29953f
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:276:13)
+
+  console.log
+    [TestDataSetup] Created connection_request 9cd59c5d-ae43-4b19-b730-b9d5dfa3a768
+
+      at createConnectionRequests (framework/TestDataSetup.ts:102:15)
+
+  console.log
+    ✅ Created 2 connection requests
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:205:13)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: '23503',
+      details: 'Key (innovator_id)=(dd43fc53-b9f4-4d76-a562-37a6602bd9ab) is not present in table "users".',
+      hint: null,
+      message: 'insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"'
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:279:28)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 2c24345b-fa75-4add-adbd-4be3bbd05f50
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [Account Manager] Calculating priorities for user 7da2d631-aeb0-4ecd-931a-17e6bae4dda9
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.error
+    [Account Manager] Error loading intro_opportunities: {
+      code: 'PGRST200',
+      details: "Searched for a foreign key relationship between 'intro_opportunities' and 'prospect_id' in the schema 'public', but no matches were found.",
+      hint: null,
+      message: "Could not find a relationship between 'intro_opportunities' and 'prospect_id' in the schema cache"
+    }
+
+      47 |
+      48 |   if (error) {
+    > 49 |     console.error('[Account Manager] Error loading intro_opportunities:', error);
+         |             ^
+      50 |     return [];
+      51 |   }
+      52 |
+
+      at loadIntroOpportunities (../packages/agents/account-manager/src/intro-prioritization.ts:49:13)
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:98:30)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:212:5)
+
+  console.log
+    [Account Manager] Loaded 2 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 2 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [ 'connection_request (139)', 'connection_request (85)' ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.log
+    [Account Manager] Inserted 2 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user a50c3816-db37-4708-ab42-31506872b55e
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    
+    📊 Connection Request Rankings:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:222:13)
+
+  console.log
+      1. Connection request: Requestor B wants to meet you (3 vouches) (score: 139)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:224:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. Connection request: Requestor A wants to meet you (score: 85)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:224:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    
+    ✅ Vouched request (B) scored 139 vs 85 for non-vouched (A)
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:235:13)
+
+  console.log
+    ✅ Vouching provides significant boost (+60 points for 3 vouches)
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:238:13)
+
+  console.log
+    ✅ Test users created
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:272:13)
+
+  console.log
+    [TestDataSetup] Created intro_offer 24daca7e-168e-4079-90c7-80f4286f9014
+
+      at createIntroOffers (framework/TestDataSetup.ts:156:15)
+
+  console.log
+    [TestDataSetup] Created intro_offer c3783f9f-01f1-485f-a80c-2de912bab3c5
+
+      at createIntroOffers (framework/TestDataSetup.ts:156:15)
+
+  console.log
+    ✅ Created 2 intro offers
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:300:13)
+
+  console.log
+    [Account Manager] Calculating priorities for user c4afec2f-6909-4fc7-be99-fed127681e1f
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.error
+    [Account Manager] Error loading intro_opportunities: {
+      code: 'PGRST200',
+      details: "Searched for a foreign key relationship between 'intro_opportunities' and 'prospect_id' in the schema 'public', but no matches were found.",
+      hint: null,
+      message: "Could not find a relationship between 'intro_opportunities' and 'prospect_id' in the schema cache"
+    }
+
+      47 |
+      48 |   if (error) {
+    > 49 |     console.error('[Account Manager] Error loading intro_opportunities:', error);
+         |             ^
+      50 |     return [];
+      51 |   }
+      52 |
+
+      at loadIntroOpportunities (../packages/agents/account-manager/src/intro-prioritization.ts:49:13)
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:98:30)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:307:5)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 0295f005-8863-41e2-995d-5ee50c29953f
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [Account Manager] Loaded 2 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 2 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [ 'intro_offer (90)', 'intro_offer (85)' ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.log
+    [Account Manager] Inserted 2 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    
+    📊 Intro Offer Rankings for user1:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:317:13)
+
+  console.log
+      1. Intro offer: null can introduce you to Prospect X (50 credits) (score: 90)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:319:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. Confirm intro: null accepted your offer to meet Prospect Y (score: 85)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:319:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+FAIL scenarios/account-manager/state-transitions.test.ts
+  Account Manager - State Transitions (Phase 3.4)
+    ✕ should pause competing opportunities when one is accepted (1161 ms)
+    ✕ should cancel paused opportunities when accepted one is completed (259 ms)
+    ✕ should handle accept/complete gracefully with no competing opportunities (251 ms)
+
+  ● Account Manager - State Transitions (Phase 3.4) › should pause competing opportunities when one is accepted
+
+    insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"
+
+
+
+  ● Account Manager - State Transitions (Phase 3.4) › should cancel paused opportunities when accepted one is completed
+
+    insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"
+
+
+
+  ● Account Manager - State Transitions (Phase 3.4) › should handle accept/complete gracefully with no competing opportunities
+
+    insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"
+
+
+
+  console.log
+    ✅ Test user created
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:356:13)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: '23503',
+      details: 'Key (innovator_id)=(7f9ecc4c-15ad-424b-a894-56fcaf79fe23) is not present in table "users".',
+      hint: null,
+      message: 'insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"'
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:359:5)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 4d6f4489-bf0d-4986-ab5e-68934d0f8b28
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 90eebaa9-9b84-4ce5-89e5-3fbadf77dfc5
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user dbd3958c-a73c-4dea-bc95-4395006bb223
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 1e3b58fa-be99-42ce-93da-ee5d4bfdf679
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 7074d585-580d-4ef5-a3e2-a8ced1935c65
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 55f4b0cb-58ed-4509-9815-97235026bf65
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+FAIL scenarios/account-manager/intro-flow-prioritization.test.ts (10.247 s)
+  Account Manager - Intro Flow Prioritization (Phase 3.4)
+    ✕ should score intro opportunities by bounty + connection strength + recency (1155 ms)
+    ✓ should score connection requests with vouching significantly higher (1837 ms)
+    ✕ should prioritize connector role over introducee role in intro offers (1034 ms)
+    ✕ should combine and rank all priority types together (136 ms)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should score intro opportunities by bounty + connection strength + recency
+
+    insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"
+
+
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should prioritize connector role over introducee role in intro offers
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 90
+    Received:   85
+
+      327 |     const introduceePriority = priorities?.find(p => p.content.includes('Prospect X'));
+      328 |
+    > 329 |     expect(connectorPriority?.value_score).toBeGreaterThan(introduceePriority?.value_score || 0);
+          |                                            ^
+      330 |     console.log(
+      331 |       `\n✅ Connector role (Y) scored ${connectorPriority?.value_score} vs ${introduceePriority?.value_score} for introducee role (X)`
+      332 |     );
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:329:44)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should combine and rank all priority types together
+
+    insert or update on table "intro_opportunities" violates foreign key constraint "intro_opportunities_innovator_id_fkey"
+
+
+
+Test Suites: 2 failed, 2 total
+Tests:       6 failed, 1 passed, 7 total
+Snapshots:   0 total
+Time:        10.559 s
+Ran all test suites matching /scenarios\/account-manager\//i.

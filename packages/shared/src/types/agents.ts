@@ -191,18 +191,29 @@ export interface Message {
 /**
  * User priority item structure.
  * Maintained by Account Manager, read by Concierge.
+ *
+ * Updated October 2025: Added presentation tracking and denormalized fields
+ * for fast intent matching (see Appendix E in requirements.md).
  */
 export interface UserPriority {
   id: string;
   user_id: string;
   priority_rank: number;
-  item_type: 'intro_opportunity' | 'community_request' | 'solution_update' | 'community_response' | 'expert_impact_notification';
+  item_type: 'intro_opportunity' | 'community_request' | 'solution_update' | 'community_response' | 'expert_impact_notification' | 'connection_request';
   item_id: string;
   value_score?: number;
-  status: 'active' | 'presented' | 'actioned' | 'expired';
+  status: 'active' | 'presented' | 'clarifying' | 'actioned' | 'expired';
+  presentation_count: number; // Number of times shown to user (0-2, 2=dormant)
   created_at: string;
   expires_at?: string;
   presented_at?: string;
+
+  // Denormalized fields for fast intent matching (NO joins needed in Call 1)
+  item_summary?: string; // One-line summary
+  item_primary_name?: string; // Primary person name (prospect/requestor/expert)
+  item_secondary_name?: string; // Secondary person name (innovator/connector)
+  item_context?: string; // Context/reason
+  item_metadata?: Record<string, any>; // Additional fields (bounty, vouches, category)
 }
 
 // ============================================================================
@@ -580,7 +591,8 @@ export interface IntroOpportunity {
   connector_user_id: string;
   innovator_id?: string;
   prospect_id?: string;
-  prospect_name: string;
+  first_name: string;
+  last_name: string;
   prospect_company?: string;
   prospect_title?: string;
   prospect_linkedin_url?: string;

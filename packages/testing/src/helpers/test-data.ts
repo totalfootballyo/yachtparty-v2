@@ -189,9 +189,15 @@ export function createTestUserPriority(
     item_id: overrides?.item_id || generateId(),
     value_score: overrides?.value_score ?? 80,
     status: overrides?.status || 'active',
+    presentation_count: overrides?.presentation_count ?? 0,
     created_at: overrides?.created_at || new Date(),
     expires_at: overrides?.expires_at || null,
     presented_at: overrides?.presented_at || null,
+    item_summary: overrides?.item_summary || null,
+    item_primary_name: overrides?.item_primary_name || null,
+    item_secondary_name: overrides?.item_secondary_name || null,
+    item_context: overrides?.item_context || null,
+    item_metadata: overrides?.item_metadata || null,
   };
 }
 
@@ -236,7 +242,8 @@ export function createTestIntroOpportunity(
     connector_user_id: overrides?.connector_user_id || generateId(),
     innovator_id: overrides?.innovator_id || null,
     prospect_id: overrides?.prospect_id || null,
-    prospect_name: overrides?.prospect_name || 'Jane Smith',
+    first_name: overrides?.first_name || 'Jane',
+    last_name: overrides?.last_name || 'Smith',
     prospect_company: overrides?.prospect_company || 'Acme Corp',
     prospect_title: overrides?.prospect_title || 'VP of Sales',
     prospect_linkedin_url:

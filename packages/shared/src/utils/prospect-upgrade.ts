@@ -167,7 +167,8 @@ export async function upgradeProspectsToUser(
           .insert({
             connector_user_id: prospect.innovator_id,
             prospect_id: prospect.id,
-            prospect_name: `${user.first_name} ${user.last_name}`.trim(),
+            first_name: user.first_name,
+            last_name: user.last_name,
             prospect_company: user.company,
             prospect_title: user.title,
             prospect_linkedin_url: user.linkedin_url,
@@ -232,7 +233,8 @@ export async function upgradeProspectsToUser(
           aggregate_type: 'intro_opportunity',
           payload: {
             connector_user_id: prospect.innovator_id,
-            prospect_name: `${user.first_name} ${user.last_name}`.trim(),
+            first_name: user.first_name,
+            last_name: user.last_name,
             auto_created: true,
             from_prospect_upgrade: true
           },

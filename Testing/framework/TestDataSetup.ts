@@ -10,6 +10,8 @@ import crypto from 'crypto';
 
 /**
  * Create intro_opportunities for testing
+ *
+ * @returns Object with opportunityIds and prospectId
  */
 export async function createIntroOpportunities(
   dbClient: SupabaseClient,
@@ -22,21 +24,52 @@ export async function createIntroOpportunities(
     connectionStrength: 'first_degree' | 'second_degree' | 'third_degree';
     status?: 'open' | 'accepted' | 'paused' | 'cancelled' | 'completed';
   }>
-): Promise<string[]> {
+): Promise<{ opportunityIds: string[]; prospectId: string }> {
   const ids: string[] = [];
 
-  // Create test prospect and innovator IDs
-  const testProspectId = crypto.randomUUID();
-  const testInnovatorId = crypto.randomUUID();
+  // Create a real prospect record (FK constraint requires valid prospect_id)
+  // Note: prospects table has first_name/last_name, not single 'name' column
+  const prospectFullName = opportunities[0]?.prospectName || 'Test Prospect';
+  const nameParts = prospectFullName.split(' ');
+  const firstName = nameParts[0] || 'Test';
+  const lastName = nameParts.slice(1).join(' ') || 'Prospect';
+
+  const { data: prospect, error: prospectError } = await dbClient
+    .from('prospects')
+    .insert({
+      first_name: firstName,
+      last_name: lastName,
+      company: opportunities[0]?.prospectCompany || 'Test Company',
+      title: opportunities[0]?.prospectTitle || null,
+      status: 'pending',
+      linkedin_url: 'https://linkedin.com/in/test', // Required by at_least_one_contact_method constraint
+      innovator_id: connectorUserId, // Use connector as innovator (they "uploaded" this prospect)
+    })
+    .select('id')
+    .single();
+
+  if (prospectError || !prospect) {
+    console.error('[TestDataSetup] Error creating test prospect:', prospectError);
+    throw new Error('Failed to create test prospect for intro_opportunities');
+  }
+
+  const testProspectId = prospect.id;
+  console.log(`[TestDataSetup] Created test prospect ${testProspectId}`);
 
   for (const opp of opportunities) {
-    const { data, error } = await dbClient
+    // Parse name into first_name and last_name
+    const nameParts = opp.prospectName.split(' ');
+    const firstName = nameParts[0] || 'Test';
+    const lastName = nameParts.slice(1).join(' ') || 'Prospect';
+
+    const { data, error} = await dbClient
       .from('intro_opportunities')
       .insert({
         connector_user_id: connectorUserId,
-        innovator_id: testInnovatorId,
+        innovator_id: null, // FK to users - leave null in tests
         prospect_id: testProspectId,
-        prospect_name: opp.prospectName,
+        first_name: firstName,
+        last_name: lastName,
         prospect_company: opp.prospectCompany,
         prospect_title: opp.prospectTitle || null,
         bounty_credits: opp.bountyCredits,
@@ -57,7 +90,7 @@ export async function createIntroOpportunities(
     }
   }
 
-  return ids;
+  return { opportunityIds: ids, prospectId: testProspectId };
 }
 
 /**

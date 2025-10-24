@@ -68,7 +68,8 @@ export class ConversationRunner {
       status?: 'open' | 'accepted' | 'paused' | 'cancelled' | 'completed';
     }>
   ): Promise<string[]> {
-    return await createIntroOpportunities(this.dbClient, userId, opportunities);
+    const { opportunityIds } = await createIntroOpportunities(this.dbClient, userId, opportunities);
+    return opportunityIds;
   }
 
   /**
@@ -131,9 +132,10 @@ export class ConversationRunner {
    */
   async collectDatabaseContext(userId: string, conversationId: string): Promise<DatabaseContext> {
     // Get agent actions logged during the conversation
+    // IMPORTANT: Include output_data to capture LLM reasoning for decisions
     const { data: actions } = await this.dbClient
       .from('agent_actions_log')
-      .select('action_type, created_at, input_data')
+      .select('action_type, created_at, input_data, output_data')
       .eq('user_id', userId)
       .order('created_at', { ascending: true });
 
@@ -359,11 +361,11 @@ export class ConversationRunner {
       dbContext   // Pass database context if collected
     );
 
-    console.log(`Judge Score: ${judgeScore.overall.toFixed(2)}`);
-    console.log(`  Tone: ${judgeScore.tone.toFixed(2)}`);
-    console.log(`  Flow: ${judgeScore.flow.toFixed(2)}`);
-    console.log(`  Completeness: ${judgeScore.completeness.toFixed(2)}`);
-    if (judgeScore.errors.length > 0) {
+    console.log(`Judge Score: ${judgeScore.overall?.toFixed(2) ?? 'N/A'}`);
+    console.log(`  Tone: ${judgeScore.tone?.toFixed(2) ?? 'N/A'}`);
+    console.log(`  Flow: ${judgeScore.flow?.toFixed(2) ?? 'N/A'}`);
+    console.log(`  Completeness: ${judgeScore.completeness?.toFixed(2) ?? 'N/A'}`);
+    if (judgeScore.errors && judgeScore.errors.length > 0) {
       console.log(`  Critical Errors: ${judgeScore.errors.length}`);
     }
 

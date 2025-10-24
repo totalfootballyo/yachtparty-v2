@@ -1,0 +1,682 @@
+
+> yachtparty-e2e-tests@0.1.0 test
+> jest scenarios/account-manager/
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+    ✅ Test user created: 248ed446-f6a9-4c7b-83fd-226606b61d79
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:51:13)
+
+  console.log
+    ✅ Test user created: 54835f50-6013-4ab4-a958-abbab5f0094d
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:61:13)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity 4d8d3c44-37e6-44ae-b5a9-9e456f9c3a99
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity d6b486fd-d113-4b7d-99de-b91f7d98d1dd
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity 0fa5b68f-9fc7-4fc9-bc4a-67c3f612c748
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity e1be980b-1ae7-4d9a-add6-e30bd32b939f
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity e9c6d78b-d2ef-4b93-8ac5-ebd7e7aa745a
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    ✅ Created 3 intro opportunities for same prospect
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:81:13)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity 7eff440b-f9a8-4426-95ec-e5d99094fec5
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity d52e6075-5dcb-4f5d-bf33-defd8d7610c6
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity 88500be6-3919-44e2-a1f8-2348a4b77795
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    ✅ Created 5 intro opportunities
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:107:13)
+
+  console.log
+    ✅ All opportunities initially 'open'
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:96:13)
+
+  console.log
+    
+    🔄 Accepting opportunity 4d8d3c44-37e6-44ae-b5a9-9e456f9c3a99...
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:100:13)
+
+  console.log
+    [Account Manager] Calculating priorities for user f98bc760-c8fa-4b10-94a9-1e26cddf4b56
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.log
+    [Account Manager] Paused other intro_opportunities for prospect 979a12d7-3165-4050-a11a-0d25bb9ce03d
+
+      at handleIntroOpportunityAccepted (../packages/agents/account-manager/src/intro-prioritization.ts:257:13)
+
+  console.log
+    
+    📊 Opportunity statuses after accept:
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:121:13)
+
+  console.log
+      1. 4d8d3c44... - accepted
+
+      at scenarios/account-manager/state-transitions.test.ts:123:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. 0fa5b68f... - paused
+
+      at scenarios/account-manager/state-transitions.test.ts:123:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      3. e9c6d78b... - paused
+
+      at scenarios/account-manager/state-transitions.test.ts:123:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    
+    ✅ Test passed: Competing opportunities paused correctly
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:136:13)
+
+  console.log
+       - Accepted: 1 opportunity
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:137:13)
+
+  console.log
+       - Paused: 2 competing opportunities
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:138:13)
+
+  console.log
+    ✅ Test user created: 5490e9cf-36df-425b-ac25-89a006c82718
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:161:13)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity c5575939-827a-4288-b160-1c9a30793747
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [Account Manager] Loaded 5 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 5 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [
+      'intro_opportunity (90)',
+      'intro_opportunity (90)',
+      'intro_opportunity (90)',
+      'intro_opportunity (85)',
+      'intro_opportunity (65)'
+    ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity 51e85f93-b046-46d3-95ea-3010a93b452b
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity fa4eb536-d98b-4325-995d-fe0eefc6dcef
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    ✅ Created 3 intro opportunities (1 accepted, 2 paused)
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:190:13)
+
+  console.log
+    
+    📊 Initial opportunity statuses:
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:205:13)
+
+  console.log
+      1. c5575939... - accepted
+
+      at scenarios/account-manager/state-transitions.test.ts:207:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. 51e85f93... - paused
+
+      at scenarios/account-manager/state-transitions.test.ts:207:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      3. fa4eb536... - paused
+
+      at scenarios/account-manager/state-transitions.test.ts:207:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    
+    🔄 Completing opportunity c5575939-827a-4288-b160-1c9a30793747...
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:216:13)
+
+  console.log
+    [Account Manager] Cancelled other intro_opportunities for prospect 64790c24-a616-46ff-9ac8-8ab42edf6599
+
+      at handleIntroOpportunityCompleted (../packages/agents/account-manager/src/intro-prioritization.ts:293:13)
+
+  console.log
+    [Account Manager] Inserted 5 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    
+    📊 Opportunity statuses after completion:
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:237:13)
+
+  console.log
+      1. c5575939... - completed
+
+      at scenarios/account-manager/state-transitions.test.ts:239:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. 51e85f93... - cancelled
+
+      at scenarios/account-manager/state-transitions.test.ts:239:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      3. fa4eb536... - cancelled
+
+      at scenarios/account-manager/state-transitions.test.ts:239:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    
+    ✅ Test passed: Paused opportunities cancelled correctly
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:252:13)
+
+  console.log
+       - Completed: 1 opportunity
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:253:13)
+
+  console.log
+       - Cancelled: 2 paused opportunities
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:254:13)
+
+  console.log
+    
+    📊 Priority Rankings:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:124:13)
+
+  console.log
+      1. Intro opportunity: Connect Prospect D at Company D (80 credits) (score: 90)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:126:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. Intro opportunity: Connect Prospect C at Company C (30 credits) (score: 90)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:126:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      3. Intro opportunity: Connect Prospect B at Company B (50 credits) (score: 90)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:126:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      4. Intro opportunity: Connect Prospect E at Company E (20 credits) (score: 85)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:126:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      5. Intro opportunity: Connect Prospect A at Company A (10 credits) (score: 65)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:126:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    
+    ✅ High bounty (Prospect D) scored higher than low bounty (Prospect A)
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:138:13)
+
+  console.log
+    ✅ Connection strength impacts scoring correctly
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:148:13)
+
+  console.log
+    
+    ✅ Test passed: Intro opportunities scored correctly
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:150:13)
+
+  console.log
+    ✅ Test user created: e3c2480c-ecbd-4be6-b3b1-fdd23d227a20
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:276:13)
+
+  console.log
+    ✅ Test user created: 9ee38df4-7df7-44b6-bec0-db4e4421b11d
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:176:13)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity 4c849658-ff2b-4c28-8450-3d4a60878193
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    ✅ Created single intro opportunity (no competitors)
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:290:13)
+
+  console.log
+    [TestDataSetup] Created connection_request 03245a62-87de-4098-a27a-79fceee64ef4
+
+      at createConnectionRequests (framework/TestDataSetup.ts:102:15)
+
+  console.log
+    [TestDataSetup] Created connection_request d4ae218f-5562-4d34-ad4a-6b627e1791fb
+
+      at createConnectionRequests (framework/TestDataSetup.ts:102:15)
+
+  console.log
+    ✅ Created 2 connection requests
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:205:13)
+
+  console.log
+    [Account Manager] Calculating priorities for user 4819fd6c-8573-4507-9a55-30640388524b
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.log
+    [Account Manager] Paused other intro_opportunities for prospect 491454a7-2eaf-458c-a9cd-6e9695743530
+
+      at handleIntroOpportunityAccepted (../packages/agents/account-manager/src/intro-prioritization.ts:257:13)
+
+  console.log
+    ✅ Accept handler succeeded with no competitors
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:307:13)
+
+  console.log
+    [Account Manager] Cancelled other intro_opportunities for prospect 491454a7-2eaf-458c-a9cd-6e9695743530
+
+      at handleIntroOpportunityCompleted (../packages/agents/account-manager/src/intro-prioritization.ts:293:13)
+
+  console.log
+    ✅ Complete handler succeeded with no competitors
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:324:13)
+
+  console.log
+    
+    ✅ Test passed: Handlers are resilient to edge cases
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:325:13)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 248ed446-f6a9-4c7b-83fd-226606b61d79
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [Account Manager] Loaded 2 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 2 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [ 'connection_request (139)', 'connection_request (85)' ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.log
+    [Account Manager] Inserted 2 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    
+    📊 Connection Request Rankings:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:222:13)
+
+  console.log
+      1. Connection request: Requestor B wants to meet you (3 vouches) (score: 139)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:224:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. Connection request: Requestor A wants to meet you (score: 85)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:224:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    
+    ✅ Vouched request (B) scored 139 vs 85 for non-vouched (A)
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:235:13)
+
+  console.log
+    ✅ Vouching provides significant boost (+60 points for 3 vouches)
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:238:13)
+
+  console.log
+    ✅ Test users created
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:272:13)
+
+  console.log
+    [TestDataSetup] Created intro_offer e51ea811-5688-4dd2-b928-791fb262ac32
+
+      at createIntroOffers (framework/TestDataSetup.ts:156:15)
+
+  console.log
+    [TestDataSetup] Created intro_offer a0eedf08-238d-487b-b473-cfa24762de51
+
+      at createIntroOffers (framework/TestDataSetup.ts:156:15)
+
+  console.log
+    ✅ Created 2 intro offers
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:300:13)
+
+  console.log
+    [Account Manager] Calculating priorities for user 9b40d8d6-f7d1-42d4-80c6-1015593339de
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 5490e9cf-36df-425b-ac25-89a006c82718
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [Account Manager] Loaded 2 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 2 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [ 'intro_offer (90)', 'intro_offer (85)' ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.log
+    [Account Manager] Inserted 2 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user e3c2480c-ecbd-4be6-b3b1-fdd23d227a20
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    
+    📊 Intro Offer Rankings for user1:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:317:13)
+
+  console.log
+      1. Intro offer: null can introduce you to Prospect X (50 credits) (score: 90)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:319:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+      2. Confirm intro: null accepted your offer to meet Prospect Y (score: 85)
+
+      at scenarios/account-manager/intro-flow-prioritization.test.ts:319:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    ✅ Test user created
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:356:13)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity 643ff59c-fcbb-4015-bb58-fa3368b5c356
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created intro_opportunity fa305fd8-5b3d-4624-8b48-0c556454d5b7
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:56:15)
+
+  console.log
+    [TestDataSetup] Created connection_request 7199c94b-079e-4e70-a158-62f011110add
+
+      at createConnectionRequests (framework/TestDataSetup.ts:102:15)
+
+  console.error
+    [TestDataSetup] Error creating intro_offer: {
+      code: '23503',
+      details: 'Key (introducee_user_id)=(5bf25af6-b107-4f9e-8f18-b501579ce78b) is not present in table "users".',
+      hint: null,
+      message: 'insert or update on table "intro_offers" violates foreign key constraint "intro_offers_introducee_user_id_fkey"'
+    }
+
+      148 |
+      149 |     if (error) {
+    > 150 |       console.error('[TestDataSetup] Error creating intro_offer:', error);
+          |               ^
+      151 |       throw error;
+      152 |     }
+      153 |
+
+      at createIntroOffers (framework/TestDataSetup.ts:150:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:387:5)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 54835f50-6013-4ab4-a958-abbab5f0094d
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+PASS scenarios/account-manager/state-transitions.test.ts (5.188 s)
+  Account Manager - State Transitions (Phase 3.4)
+    ✓ should pause competing opportunities when one is accepted (1088 ms)
+    ✓ should cancel paused opportunities when accepted one is completed (704 ms)
+    ✓ should handle accept/complete gracefully with no competing opportunities (520 ms)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 9ee38df4-7df7-44b6-bec0-db4e4421b11d
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 49de3759-9a32-4b49-aa35-9f73975a80ec
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 7fbf4c77-0198-45ed-91cb-f0bad40e8f4f
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 6deb9ab0-0024-48ce-8264-53216bfa6232
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 5bf25af6-b107-4f9e-8f18-b501579ce78b
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+FAIL scenarios/account-manager/intro-flow-prioritization.test.ts (9.076 s)
+  Account Manager - Intro Flow Prioritization (Phase 3.4)
+    ✓ should score intro opportunities by bounty + connection strength + recency (1776 ms)
+    ✓ should score connection requests with vouching significantly higher (914 ms)
+    ✕ should prioritize connector role over introducee role in intro offers (991 ms)
+    ✕ should combine and rank all priority types together (391 ms)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should prioritize connector role over introducee role in intro offers
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 90
+    Received:   85
+
+      327 |     const introduceePriority = priorities?.find(p => p.content.includes('Prospect X'));
+      328 |
+    > 329 |     expect(connectorPriority?.value_score).toBeGreaterThan(introduceePriority?.value_score || 0);
+          |                                            ^
+      330 |     console.log(
+      331 |       `\n✅ Connector role (Y) scored ${connectorPriority?.value_score} vs ${introduceePriority?.value_score} for introducee role (X)`
+      332 |     );
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:329:44)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should combine and rank all priority types together
+
+    insert or update on table "intro_offers" violates foreign key constraint "intro_offers_introducee_user_id_fkey"
+
+
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       2 failed, 5 passed, 7 total
+Snapshots:   0 total
+Time:        9.379 s, estimated 11 s
+Ran all test suites matching /scenarios\/account-manager\//i.

@@ -179,6 +179,13 @@ export const SCENARIO_GUIDANCE = {
   general_response: {
     situation: 'Responding to a question or general interaction',
     guidance: 'Use the context provided. Be brief and helpful. Match their communication style.'
+  },
+
+  response_with_proactive_priority: {
+    situation: 'Responding to user AND mentioning a different priority proactively',
+    guidance: 'Answer their actual question first (primary response), then use a natural transition ("While I have you...") to mention a different open priority. Keep it optional and brief.',
+    structure: 'Message 1: Primary response (2-4 sentences). Message 2: Transition + proactive mention (1-2 sentences).',
+    example: 'Great question! We have 3 people who responded to your CTO hiring question - I\'ll send their details in separate messages so you can review each one.\n---\nWhile I have you, Ben offered to intro you to Jim James at ABC Corp for that CTV attribution question you had last week. Want me to follow up with Ben?'
   }
 };
 
@@ -311,6 +318,47 @@ NOT: "Found Mike at Google who scaled their CTV platform to $100M..." (you made 
       // We have a name, but still remind to use it correctly
       guidance += `\n\nNote: You have specific person information in the context. Use ONLY the details provided. Do not embellish or add extra context not in the data.`;
     }
+  }
+
+  // Special handling for proactive priority scenario
+  if (scenario === 'response_with_proactive_priority' && parsedContext.proactive_priority) {
+    const proactivePriority = parsedContext.proactive_priority;
+
+    guidance += `\n\n## Proactive Priority Composition
+
+STRUCTURE YOUR RESPONSE IN TWO PARTS (using --- delimiter):
+
+**Part 1: Primary Response**
+- Answer the user's actual question/concern FIRST
+- Use guidance from primary_response_guidance: "${parsedContext.primary_response_guidance || 'Respond to their question naturally'}"
+- Topic: ${parsedContext.primary_topic}
+- Keep it natural and conversational (2-4 sentences)
+
+**Part 2: Proactive Priority Mention**
+- Transition phrase: "${proactivePriority.transition_phrase || 'While I have you'}"
+- Priority to mention: ${proactivePriority.summary}
+- Priority type: ${proactivePriority.item_type}
+- Keep it OPTIONAL and brief (1-2 sentences)
+- Make it easy to respond: "Want me to follow up?" / "Interested?" / "Let me know"
+
+IMPORTANT OVERRIDE CONDITIONS:
+Even though Call 1 says should_mention=${proactivePriority.should_mention}, you can SKIP the proactive mention if:
+- User's tone suggests they're busy, frustrated, or stressed
+- The transition would feel jarring or unnatural
+- The combined message would be too long (>500 tokens)
+- User has previously seemed annoyed by proactive mentions
+
+Your judgment on tone and flow takes priority. If in doubt, just send the primary response without the proactive mention.
+
+LIMITS:
+- Maximum 1 proactive priority per message
+- Keep total length reasonable
+- Don't force it if it doesn't feel natural
+
+Example format:
+[Primary response addressing their question]
+---
+${proactivePriority.transition_phrase || 'While I have you'}, ${proactivePriority.summary}. Want me to follow up?`;
   }
 
   // Add tool results if available

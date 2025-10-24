@@ -1,0 +1,544 @@
+
+> yachtparty-e2e-tests@0.1.0 test
+> jest scenarios/account-manager/
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+    ✅ Test user created: 41533345-2d34-4764-8959-7bda7d7ab8cb
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:51:13)
+
+  console.log
+    ✅ Test user created: 338eda74-8c46-4003-bcf6-b6154cf481d9
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:61:13)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache"
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:57:28)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache"
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:64:28)
+
+  console.log
+    ✅ Test user created: e9afca50-11a4-4058-adc7-b90ef5041877
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:161:13)
+
+  console.log
+    ✅ Test user created: 3cc690ed-aa86-42c6-af22-4aec8f22213a
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:176:13)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache"
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:166:28)
+
+  console.log
+    [TestDataSetup] Created connection_request f229b9bf-c117-4eb1-81b3-d779efaba3c5
+
+      at createConnectionRequests (framework/TestDataSetup.ts:102:15)
+
+  console.log
+    ✅ Test user created: b90a7bae-9f99-404c-beeb-897c2fd2cc34
+
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:276:13)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache"
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/state-transitions.test.ts:279:28)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 41533345-2d34-4764-8959-7bda7d7ab8cb
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Created connection_request 486c554d-837f-4840-9ca4-680f03947303
+
+      at createConnectionRequests (framework/TestDataSetup.ts:102:15)
+
+  console.log
+    ✅ Created 2 connection requests
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:205:13)
+
+  console.log
+    [Account Manager] Calculating priorities for user 22456cb7-211a-4a30-9c52-7c8bea963c39
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.error
+    [Account Manager] Error loading intro_opportunities: {
+      code: 'PGRST200',
+      details: "Searched for a foreign key relationship between 'intro_opportunities' and 'prospect_id' in the schema 'public', but no matches were found.",
+      hint: null,
+      message: "Could not find a relationship between 'intro_opportunities' and 'prospect_id' in the schema cache"
+    }
+
+      47 |
+      48 |   if (error) {
+    > 49 |     console.error('[Account Manager] Error loading intro_opportunities:', error);
+         |             ^
+      50 |     return [];
+      51 |   }
+      52 |
+
+      at loadIntroOpportunities (../packages/agents/account-manager/src/intro-prioritization.ts:49:13)
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:98:30)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:212:5)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user e9afca50-11a4-4058-adc7-b90ef5041877
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [Account Manager] Loaded 2 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 2 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [ 'connection_request (139)', 'connection_request (85)' ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.error
+    [Account Manager] Error inserting priority: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'content' column of 'user_priorities' in the schema cache"
+    }
+
+      180 |
+      181 |     if (insertError) {
+    > 182 |       console.error('[Account Manager] Error inserting priority:', insertError);
+          |               ^
+      183 |     }
+      184 |   }
+      185 |
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:182:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:212:5)
+
+  console.error
+    [Account Manager] Error inserting priority: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'content' column of 'user_priorities' in the schema cache"
+    }
+
+      180 |
+      181 |     if (insertError) {
+    > 182 |       console.error('[Account Manager] Error inserting priority:', insertError);
+          |               ^
+      183 |     }
+      184 |   }
+      185 |
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:182:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:212:5)
+
+  console.log
+    [Account Manager] Inserted 2 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    
+    📊 Connection Request Rankings:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:222:13)
+
+  console.log
+    ✅ Test users created
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:272:13)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user b90a7bae-9f99-404c-beeb-897c2fd2cc34
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Created intro_offer 2e8face0-5288-412d-9488-2fea55b8790c
+
+      at createIntroOffers (framework/TestDataSetup.ts:156:15)
+
+  console.log
+    [TestDataSetup] Created intro_offer d1510ab6-c7d0-4aa3-bf56-4cf668468b60
+
+      at createIntroOffers (framework/TestDataSetup.ts:156:15)
+
+  console.log
+    ✅ Created 2 intro offers
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:300:13)
+
+  console.log
+    [Account Manager] Calculating priorities for user e8fa4ee6-703f-4fc4-90cc-fded9610badb
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:84:11)
+
+  console.error
+    [Account Manager] Error loading intro_opportunities: {
+      code: 'PGRST200',
+      details: "Searched for a foreign key relationship between 'intro_opportunities' and 'prospect_id' in the schema 'public', but no matches were found.",
+      hint: null,
+      message: "Could not find a relationship between 'intro_opportunities' and 'prospect_id' in the schema cache"
+    }
+
+      47 |
+      48 |   if (error) {
+    > 49 |     console.error('[Account Manager] Error loading intro_opportunities:', error);
+         |             ^
+      50 |     return [];
+      51 |   }
+      52 |
+
+      at loadIntroOpportunities (../packages/agents/account-manager/src/intro-prioritization.ts:49:13)
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:98:30)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:307:5)
+
+  console.log
+    [Account Manager] Loaded 2 intro flow priorities
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:106:11)
+
+  console.log
+    [Account Manager] Total 2 priorities before sorting
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:135:11)
+
+  console.log
+    [Account Manager] Top 10 priorities: [ 'intro_offer (90)', 'intro_offer (85)' ]
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:143:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+FAIL scenarios/account-manager/state-transitions.test.ts
+  Account Manager - State Transitions (Phase 3.4)
+    ✕ should pause competing opportunities when one is accepted (1091 ms)
+    ✕ should cancel paused opportunities when accepted one is completed (190 ms)
+    ✕ should handle accept/complete gracefully with no competing opportunities (209 ms)
+
+  ● Account Manager - State Transitions (Phase 3.4) › should pause competing opportunities when one is accepted
+
+    Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache
+
+
+
+  ● Account Manager - State Transitions (Phase 3.4) › should cancel paused opportunities when accepted one is completed
+
+    Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache
+
+
+
+  ● Account Manager - State Transitions (Phase 3.4) › should handle accept/complete gracefully with no competing opportunities
+
+    Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache
+
+
+
+  console.error
+    [Account Manager] Error inserting priority: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'content' column of 'user_priorities' in the schema cache"
+    }
+
+      180 |
+      181 |     if (insertError) {
+    > 182 |       console.error('[Account Manager] Error inserting priority:', insertError);
+          |               ^
+      183 |     }
+      184 |   }
+      185 |
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:182:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:307:5)
+
+  console.error
+    [Account Manager] Error inserting priority: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'content' column of 'user_priorities' in the schema cache"
+    }
+
+      180 |
+      181 |     if (insertError) {
+    > 182 |       console.error('[Account Manager] Error inserting priority:', insertError);
+          |               ^
+      183 |     }
+      184 |   }
+      185 |
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:182:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:307:5)
+
+  console.log
+    [Account Manager] Inserted 2 priorities into user_priorities table
+
+      at calculateUserPriorities (../packages/agents/account-manager/src/index.ts:186:11)
+
+  console.log
+    
+    📊 Intro Offer Rankings for user1:
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:317:13)
+
+  console.log
+    ✅ Test user created
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:356:13)
+
+  console.error
+    [TestDataSetup] Error creating intro_opportunity: {
+      code: 'PGRST204',
+      details: null,
+      hint: null,
+      message: "Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache"
+    }
+
+      48 |
+      49 |     if (error) {
+    > 50 |       console.error('[TestDataSetup] Error creating intro_opportunity:', error);
+         |               ^
+      51 |       throw error;
+      52 |     }
+      53 |
+
+      at createIntroOpportunities (framework/TestDataSetup.ts:50:15)
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:359:5)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 338eda74-8c46-4003-bcf6-b6154cf481d9
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 3cc690ed-aa86-42c6-af22-4aec8f22213a
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user 39ecabdd-33ac-4944-828f-05df80cdaf9f
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user e1328035-acc7-4c5b-aff1-6b4ce9955b8a
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user ff0c3e1e-ec0f-4627-8c4e-fd027c87b574
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+  console.log
+    [TestDataSetup] Cleaning up test data for user c8eb1b78-5c27-4f38-971e-7513a812c38e
+
+      at cleanupTestData (framework/TestDataSetup.ts:332:11)
+
+  console.log
+    [TestDataSetup] Cleanup complete
+
+      at cleanupTestData (framework/TestDataSetup.ts:346:11)
+
+FAIL scenarios/account-manager/intro-flow-prioritization.test.ts (8.747 s)
+  Account Manager - Intro Flow Prioritization (Phase 3.4)
+    ✕ should score intro opportunities by bounty + connection strength + recency (1069 ms)
+    ✕ should score connection requests with vouching significantly higher (1665 ms)
+    ✕ should prioritize connector role over introducee role in intro offers (1091 ms)
+    ✕ should combine and rank all priority types together (151 ms)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should score intro opportunities by bounty + connection strength + recency
+
+    Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache
+
+
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should score connection requests with vouching significantly higher
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 0
+
+      226 |
+      227 |     expect(priorities).toBeDefined();
+    > 228 |     expect(priorities!.length).toBe(2);
+          |                                ^
+      229 |
+      230 |     // Vouched request should score MUCH higher (3 vouches × 20 = +60 points)
+      231 |     const requestBPriority = priorities?.find(p => p.content.includes('Requestor B'));
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:228:32)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should prioritize connector role over introducee role in intro offers
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 0
+
+      321 |
+      322 |     expect(priorities).toBeDefined();
+    > 323 |     expect(priorities!.length).toBe(2);
+          |                                ^
+      324 |
+      325 |     // Connector role should rank higher than introducee role
+      326 |     const connectorPriority = priorities?.find(p => p.content.includes('Prospect Y'));
+
+      at Object.<anonymous> (scenarios/account-manager/intro-flow-prioritization.test.ts:323:32)
+
+  ● Account Manager - Intro Flow Prioritization (Phase 3.4) › should combine and rank all priority types together
+
+    Could not find the 'connection_strength' column of 'intro_opportunities' in the schema cache
+
+
+
+Test Suites: 2 failed, 2 total
+Tests:       7 failed, 7 total
+Snapshots:   0 total
+Time:        9.092 s
+Ran all test suites matching /scenarios\/account-manager\//i.

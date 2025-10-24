@@ -1,0 +1,105 @@
+
+> yachtparty-e2e-tests@0.1.0 test
+> jest scenarios/concierge/reengagement-throttling.test.ts
+
+  console.log
+    ✅ Test environment loaded
+
+      at Object.<anonymous> (jest.setup.js:31:9)
+
+  console.log
+       Database: https://igxwsyvmffcvxbqmrwpc.supabase.co
+
+      at Object.<anonymous> (jest.setup.js:32:9)
+
+  console.log
+       API Key: sk-ant-api03-ckFRaob...
+
+      at Object.<anonymous> (jest.setup.js:33:9)
+
+  console.log
+    
+    📝 Setting up initial conversation...
+
+      at Object.<anonymous> (scenarios/concierge/reengagement-throttling.test.ts:59:13)
+
+  console.log
+    
+    📝 Setting up initial conversation...
+
+      at Object.<anonymous> (scenarios/concierge/reengagement-throttling.test.ts:177:13)
+
+  console.log
+    
+    📝 Setting up initial conversation...
+
+      at Object.<anonymous> (scenarios/concierge/reengagement-throttling.test.ts:290:13)
+
+FAIL scenarios/concierge/reengagement-throttling.test.ts
+  Concierge Agent - Re-engagement Throttling (Phase 3.5)
+    ✕ should send first re-engagement message after 7 days of inactivity (1074 ms)
+    ✕ should throttle re-engagement if last attempt was <7 days ago (303 ms)
+    ✕ should pause re-engagement after 3 unanswered attempts in 90 days (296 ms)
+
+  ● Concierge Agent - Re-engagement Throttling (Phase 3.5) › should send first re-engagement message after 7 days of inactivity
+
+    401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_011CURny6bSjoh8pZwSmTBf7"}
+
+      106 |    */
+      107 |   async getInitialMessage(): Promise<string> {
+    > 108 |     const response = await this.anthropic.messages.create({
+          |                      ^
+      109 |       model: 'claude-sonnet-4-20250514',
+      110 |       max_tokens: 100,
+      111 |       temperature: 0.8,
+
+      at Function.generate (node_modules/@anthropic-ai/sdk/src/error.ts:65:14)
+      at Anthropic.makeStatusError (node_modules/@anthropic-ai/sdk/src/core.ts:397:21)
+      at Anthropic.makeRequest (node_modules/@anthropic-ai/sdk/src/core.ts:460:24)
+      at SimulatedUser.getInitialMessage (framework/SimulatedUser.ts:108:22)
+      at ConversationRunner.runSimulation (framework/ConversationRunner.ts:203:23)
+      at Object.<anonymous> (scenarios/concierge/reengagement-throttling.test.ts:60:27)
+
+  ● Concierge Agent - Re-engagement Throttling (Phase 3.5) › should throttle re-engagement if last attempt was <7 days ago
+
+    401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_011CURny9ADzGJP5bLXTwhui"}
+
+      106 |    */
+      107 |   async getInitialMessage(): Promise<string> {
+    > 108 |     const response = await this.anthropic.messages.create({
+          |                      ^
+      109 |       model: 'claude-sonnet-4-20250514',
+      110 |       max_tokens: 100,
+      111 |       temperature: 0.8,
+
+      at Function.generate (node_modules/@anthropic-ai/sdk/src/error.ts:65:14)
+      at Anthropic.makeStatusError (node_modules/@anthropic-ai/sdk/src/core.ts:397:21)
+      at Anthropic.makeRequest (node_modules/@anthropic-ai/sdk/src/core.ts:460:24)
+      at SimulatedUser.getInitialMessage (framework/SimulatedUser.ts:108:22)
+      at ConversationRunner.runSimulation (framework/ConversationRunner.ts:203:23)
+      at Object.<anonymous> (scenarios/concierge/reengagement-throttling.test.ts:178:27)
+
+  ● Concierge Agent - Re-engagement Throttling (Phase 3.5) › should pause re-engagement after 3 unanswered attempts in 90 days
+
+    401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_011CURnyASckNJ51xt1KYUcu"}
+
+      106 |    */
+      107 |   async getInitialMessage(): Promise<string> {
+    > 108 |     const response = await this.anthropic.messages.create({
+          |                      ^
+      109 |       model: 'claude-sonnet-4-20250514',
+      110 |       max_tokens: 100,
+      111 |       temperature: 0.8,
+
+      at Function.generate (node_modules/@anthropic-ai/sdk/src/error.ts:65:14)
+      at Anthropic.makeStatusError (node_modules/@anthropic-ai/sdk/src/core.ts:397:21)
+      at Anthropic.makeRequest (node_modules/@anthropic-ai/sdk/src/core.ts:460:24)
+      at SimulatedUser.getInitialMessage (framework/SimulatedUser.ts:108:22)
+      at ConversationRunner.runSimulation (framework/ConversationRunner.ts:203:23)
+      at Object.<anonymous> (scenarios/concierge/reengagement-throttling.test.ts:291:27)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 3 total
+Snapshots:   0 total
+Time:        2.644 s, estimated 4 s
+Ran all test suites matching /scenarios\/concierge\/reengagement-throttling.test.ts/i.

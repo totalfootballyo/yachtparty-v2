@@ -172,13 +172,19 @@ export interface UserPriority {
     id: string;
     user_id: string;
     priority_rank: number;
-    item_type: 'intro_opportunity' | 'community_request' | 'solution_update' | 'community_response' | 'expert_impact_notification';
+    item_type: 'intro_opportunity' | 'community_request' | 'solution_update' | 'community_response' | 'expert_impact_notification' | 'connection_request';
     item_id: string;
     value_score: number | null;
-    status: 'active' | 'presented' | 'actioned' | 'expired';
+    status: 'active' | 'presented' | 'clarifying' | 'actioned' | 'expired';
+    presentation_count: number;
     created_at: Date;
     expires_at: Date | null;
     presented_at: Date | null;
+    item_summary: string | null;
+    item_primary_name: string | null;
+    item_secondary_name: string | null;
+    item_context: string | null;
+    item_metadata: Record<string, any> | null;
 }
 /**
  * SolutionWorkflow - Saga state tracking for solution research workflows
@@ -218,7 +224,8 @@ export interface IntroOpportunity {
     connector_user_id: string;
     innovator_id: string | null;
     prospect_id: string | null;
-    prospect_name: string;
+    first_name: string;
+    last_name: string;
     prospect_company: string | null;
     prospect_title: string | null;
     prospect_linkedin_url: string | null;

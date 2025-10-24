@@ -10,7 +10,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { Message, User } from '@yachtparty/shared';
+import type { Message, User, UserPriority } from '@yachtparty/shared';
 
 /**
  * Output structure from Call 1
@@ -34,6 +34,7 @@ export interface Call1Output {
     | 'multi_thread_response'
     | 'community_request_followup'
     | 'priority_update'
+    | 'response_with_proactive_priority' // Answer question + mention priority
     | 'general_response'
     | 'request_clarification' // User intent is ambiguous, need clarification
     | 'no_message'; // Re-engagement can decide not to message
@@ -41,9 +42,28 @@ export interface Call1Output {
   // Context for Call 2
   context_for_call_2: {
     primary_topic: string;
+    primary_response_guidance?: string; // Dry answer from Call 1 to user's question
     tone: 'helpful' | 'informative' | 'reassuring';
     message_structure?: 'single' | 'sequence_2' | 'sequence_3'; // Re-engagement specific
     secondary_topics?: string[]; // Re-engagement specific
+
+    // Intent tracking (NEW - Appendix E)
+    user_responding_to?: {
+      item_type: string;
+      item_id: string;
+      confidence: 'high' | 'medium' | 'low';
+    } | null;
+
+    // Proactive priority presentation (NEW - Appendix E)
+    proactive_priority?: {
+      item_type: 'intro_opportunity' | 'connection_request' | 'community_request';
+      item_id: string;
+      summary: string;
+      transition_phrase: string;
+      should_mention: boolean;
+      reason?: string;
+    };
+
     personalization_hooks?: {
       user_name?: string;
       recent_context?: string;
@@ -70,13 +90,7 @@ export interface Call1Output {
  */
 export interface ConciergeContext {
   recentMessages: Message[];
-  userPriorities?: Array<{
-    id: string;
-    item_type: string;
-    item_id: string;
-    value_score?: number | null;
-    status: string;
-  }>;
+  userPriorities?: UserPriority[];
   outstandingCommunityRequests?: Array<{
     id: string;
     question: string;
@@ -154,20 +168,28 @@ export async function callUserMessageDecision(
  * Build system prompt for user message decision
  */
 function buildUserMessageDecisionPrompt(context: ConciergeContext): string {
-  // Format recent messages
+  // Format recent messages - increased to 10 for better intent matching
   const messageHistory = context.recentMessages
-    .slice(-5) // Last 5 messages for user message handling
-    .map(m => `[${m.role === 'user' ? 'User' : 'Concierge'}]: ${m.content}`)
+    .slice(-10) // Last 10 messages for user message handling
+    .map(m => `[${m.role === 'user' ? 'User' : 'Concierge'}] (${new Date(m.created_at).toLocaleString()}): ${m.content}`)
     .join('\n');
 
-  // Format priorities if available
+  // Format priorities with denormalized fields for intent matching
   let prioritiesSection = '';
   if (context.userPriorities && context.userPriorities.length > 0) {
     const priorityList = context.userPriorities
-      .slice(0, 3) // Top 3 priorities
-      .map((p, idx) => `${idx + 1}. [${p.item_type}] (value: ${p.value_score || 'N/A'})`)
-      .join('\n');
-    prioritiesSection = `\n\n## User's Current Priorities (from Account Manager)\n${priorityList}\n\nNote: These are ranked opportunities. Only mention if contextually relevant to user's message.`;
+      .slice(0, 10) // Top 10 priorities
+      .map((p, idx) => {
+        let details = `${idx + 1}. **${p.item_type}** (ID: ${p.item_id}, Rank: ${p.priority_rank}, Presented: ${p.presentation_count || 0}x)`;
+        if (p.item_summary) details += `\n   Summary: ${p.item_summary}`;
+        if (p.item_primary_name) details += `\n   Primary: ${p.item_primary_name}`;
+        if (p.item_secondary_name) details += `\n   Secondary: ${p.item_secondary_name}`;
+        if (p.item_context) details += `\n   Context: ${p.item_context}`;
+        if (p.item_metadata) details += `\n   Metadata: ${JSON.stringify(p.item_metadata)}`;
+        return details;
+      })
+      .join('\n\n');
+    prioritiesSection = `\n\n## User's Current Priorities (from Account Manager - denormalized for fast matching)\n${priorityList}\n\nNote: These are ranked opportunities. Use the names/context to match against user's message.`;
   }
 
   // Format outstanding requests if available
@@ -311,6 +333,123 @@ If user is responding to an intro offer (someone offered to introduce them):
 If user is responding to a connection request (someone wants intro to them):
 → Use accept_connection_request or decline_connection_request
 
+## CRITICAL: Determining User Intent & Context
+
+When a user sends a message, you MUST carefully analyze WHAT they are talking about.
+
+### Reading Conversation Flow
+
+1. **Review recent messages (last 10) with timestamps**
+   - What topics were discussed?
+   - What questions did you ask?
+   - What priorities did you present to this user?
+
+2. **Identify the user's intent**
+   - Is the user clearly responding to a specific item you presented?
+   - Is the user introducing a new topic entirely?
+   - Is the user's message ambiguous (could apply to multiple items)?
+
+3. **Match response to specific priorities (if applicable)**
+   - You have access to the user's current priorities (from Account Manager)
+   - Each priority has details: names, topics, context
+   - Use these details to determine if user is addressing a specific priority
+   - Look for keywords, names, topics that match
+
+### Intent Matching Examples
+
+**CORRECT - Specific Intent Identified:**
+
+\`\`\`
+Recent context:
+- You (yesterday 3pm): "I found 3 people who responded to your CTO hiring question. I'll send details."
+- You (yesterday 3:05pm): "Also, Ben offered to intro you to Jim James at ABC Corp for CTV attribution. Interested?"
+
+User (today 9am): "Yes please, send me those 3 people!"
+
+✅ CORRECT INTERPRETATION:
+- User is responding to: community_request (CTO hiring question)
+- User is NOT responding to: intro_opportunity (Jim James intro)
+- Output: user_responding_to = { item_type: "community_request", item_id: "...", confidence: "high" }
+- Use tool: respond_to_community_request (or relevant tool)
+- Do NOT mark intro_opportunity as actioned
+\`\`\`
+
+**CORRECT - No Specific Intent (New Topic):**
+
+\`\`\`
+Recent context:
+- User had 3 open priorities: hiring CTO, intro to Sarah Chen, meet Rob from MediaMath
+
+User (today): "Can you help me find a marketing agency?"
+
+✅ CORRECT INTERPRETATION:
+- User is NOT responding to any existing priority
+- User is introducing a NEW topic (marketing agency search)
+- Output: user_responding_to = null
+- Consider: proactive_priority (mention one of the 3 open items if appropriate)
+- Use tool: request_solution_research OR publish_community_request
+\`\`\`
+
+**INCORRECT - Marking Everything as Actioned:**
+
+\`\`\`
+[Same scenario as above - user asks about marketing agency]
+
+❌ INCORRECT INTERPRETATION:
+- User sent a message, so mark ALL 3 priorities as actioned
+- This is WRONG - user didn't address any of them
+- Result: System "forgets" about legitimate open priorities
+
+Never do this. Only mark priorities as actioned when user EXPLICITLY addresses them.
+\`\`\`
+
+**AMBIGUOUS - Ask for Clarification:**
+
+\`\`\`
+You (yesterday): "I have 2 intro opportunities for you: (1) Sarah Chen at Hulu for content strategy, (2) Mike Ross at HBO for distribution partnerships"
+
+User (today): "Yes, let's do it!"
+
+❌ UNCLEAR which intro user wants (or if they want both)
+
+✅ CORRECT RESPONSE:
+- Output: next_scenario = "request_clarification"
+- Output: clarification_needed = {
+    ambiguous_request: "User said 'yes, let's do it' but didn't specify which intro",
+    possible_interpretations: [
+      { label: "Both intros", description: "User wants both Sarah and Mike intros" },
+      { label: "Sarah only", description: "User wants Sarah Chen intro (content strategy)" },
+      { label: "Mike only", description: "User wants Mike Ross intro (distribution)" }
+    ]
+  }
+- Call 2 will ask: "Just to clarify - are you interested in both intros (Sarah at Hulu and Mike at HBO), or one specifically?"
+\`\`\`
+
+### When to Include Proactive Priority
+
+**DO mention a proactive priority if:**
+- ✅ User's message is about a DIFFERENT topic (not the priority you want to mention)
+- ✅ User seems engaged and responsive (not stressed/short)
+- ✅ Priority has high value_score (>70)
+- ✅ It's been >3 days since last presentation
+- ✅ You can introduce it naturally with "While I have you..."
+
+**DON'T mention proactive priority if:**
+- ❌ User's message indicates urgency or stress
+- ❌ User explicitly said "just answer my question"
+- ❌ You already presented this priority in last 2 messages
+- ❌ User is clearly disengaged (one-word answers)
+- ❌ The topic is completely unrelated and would feel jarring
+
+### When in Doubt
+
+If the user's message could apply to multiple priorities:
+1. **Ask for clarification** rather than guessing
+2. **Be explicit** in the clarification: List the specific options
+3. **Wait for clear confirmation** before updating status or calling tools
+
+Remember: It's better to ask one clarifying question than to incorrectly mark items as actioned or miss opportunities to serve the user.
+
 ## Decision Process
 
 Analyze the user's message:
@@ -355,6 +494,7 @@ When the user's request could have multiple valid interpretations:
 - **intro_opportunity_acknowledgment**: User wants to meet someone
 - **goal_stored_acknowledgment**: User shared their goal for the community
 - **request_clarification**: User's intent is ambiguous, need clarification
+- **response_with_proactive_priority**: Answer user's question + mention a priority proactively
 - **general_response**: General conversation or question not requiring tools
 
 ## Output Format
@@ -379,10 +519,46 @@ Return ONLY a JSON object (no markdown, no explanation):
   "next_scenario": "community_request_acknowledgment",
   "context_for_call_2": {
     "primary_topic": "what the user asked about",
+    "primary_response_guidance": "Dry answer: We'll find experts to help with...",
     "tone": "helpful",
+    "user_responding_to": null,
     "personalization_hooks": {
       "user_name": "${context.user.first_name}",
       "recent_context": "brief context from conversation"
+    }
+  }
+}
+
+**Example 2: User responding to specific priority + proactive mention**
+{
+  "tools_to_execute": [
+    {
+      "tool_name": "accept_intro_opportunity",
+      "params": {
+        "intro_opportunity_id": "uuid-123"
+      }
+    }
+  ],
+  "next_scenario": "response_with_proactive_priority",
+  "context_for_call_2": {
+    "primary_topic": "User accepted Jim James intro",
+    "primary_response_guidance": "Great! I'll coordinate the intro with Ben and Jim.",
+    "tone": "helpful",
+    "user_responding_to": {
+      "item_type": "intro_opportunity",
+      "item_id": "uuid-123",
+      "confidence": "high"
+    },
+    "proactive_priority": {
+      "item_type": "connection_request",
+      "item_id": "uuid-456",
+      "summary": "Rob from MediaMath wants to connect about CTV attribution",
+      "transition_phrase": "While I have you",
+      "should_mention": true,
+      "reason": "User seems engaged, different topic, high value"
+    },
+    "personalization_hooks": {
+      "user_name": "${context.user.first_name}"
     }
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Concierge Agent - Re-engagement Throttling Tests
+ * Innovator Agent - Re-engagement Throttling Tests
  *
  * Tests Phase 3.5 re-engagement throttling implementation:
  * - 7-day minimum between re-engagement attempts
@@ -7,7 +7,7 @@
  * - Proper logging of throttling actions
  *
  * These tests validate the anti-spam throttling logic implemented in
- * packages/agents/concierge/src/index.ts lines 333-456
+ * packages/agents/innovator/src/index.ts lines 298-421
  */
 
 import { ConversationRunner } from '../../framework/ConversationRunner';
@@ -15,7 +15,7 @@ import { createTestDbClient } from '../../../packages/testing/src/helpers/db-uti
 import { cleanupTestData } from '../../framework/TestDataSetup';
 import type { SimulatedPersona } from '../../framework/SimulatedUser';
 
-describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
+describe('Innovator Agent - Re-engagement Throttling (Phase 3.5)', () => {
   let runner: ConversationRunner;
   let testDbClient: ReturnType<typeof createTestDbClient>;
   let testUserIds: string[] = [];
@@ -43,15 +43,15 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
    * Agent should send a thoughtful re-engagement message.
    */
   it('should send first re-engagement message after 7 days of inactivity', async () => {
-    // Create test persona
+    // Create test persona - Innovator context
     const persona: SimulatedPersona = {
       name: 'Alex Chen',
-      personality: 'Engaged professional seeking executive coaching resources',
-      systemPrompt: `You are Alex Chen, VP of Engineering at DataCorp. You're engaged with the community and respond thoughtfully to messages. Keep responses professional and concise.`,
+      personality: 'Engaged innovator managing prospect pipeline',
+      systemPrompt: `You are Alex Chen, VP of Engineering at DataCorp. You're an active innovator managing your prospect pipeline. Respond thoughtfully and professionally.`,
       initialContext: {
         company: 'DataCorp',
         title: 'VP Engineering',
-        expertise: 'Engineering management, executive coaching, team development',
+        expertise: 'Engineering leadership, prospect management, professional introductions',
       },
     };
 
@@ -59,9 +59,9 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     console.log('\n📝 Setting up initial conversation...');
     const initialResult = await runner.runSimulation(
       persona,
-      'concierge',
+      'innovator',
       5,
-      'reengagement-test-1',
+      'innovator-reengagement-test-1',
       false // Don't collect DB context yet
     );
 
@@ -78,7 +78,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     // (No setup needed - this is the baseline case)
 
     // Trigger re-engagement check by invoking agent with re_engagement_check system message
-    const { invokeConciergeAgent } = await import('../../../packages/agents/concierge/src/index');
+    const { invokeInnovatorAgent } = await import('../../../packages/agents/innovator/src/index');
 
     const { data: conversation } = await testDbClient
       .from('conversations')
@@ -114,7 +114,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
 
     console.log('🔄 Triggering re-engagement check (7 days since last message)...');
 
-    const response = await invokeConciergeAgent(
+    const response = await invokeInnovatorAgent(
       reengagementMessage,
       user!,
       conversation!,
@@ -152,7 +152,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     expect(pausedAction).toBeUndefined();
 
     console.log(`✅ No throttling actions logged (correct)\n`);
-  }, 120000); // 2 minutes for 5-turn simulation + re-engagement check + judge eval
+  }, 60000);
 
   /**
    * Scenario 2: Throttled re-engagement (7-day rule)
@@ -161,15 +161,15 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
    * Agent should be SILENT and log re_engagement_throttled.
    */
   it('should throttle re-engagement if last attempt was <7 days ago', async () => {
-    // Create test persona
+    // Create test persona - Innovator context
     const persona: SimulatedPersona = {
       name: 'Jordan Lee',
       personality: 'Terse founder, brief responses',
-      systemPrompt: `You are Jordan Lee, Founder at StartupCo. You're busy and give brief, direct responses. Keep messages short.`,
+      systemPrompt: `You are Jordan Lee, Founder at StartupCo. You're busy managing introductions and give brief, direct responses. Keep messages short.`,
       initialContext: {
         company: 'StartupCo',
         title: 'Founder',
-        expertise: 'Fundraising, investor relations, startup operations',
+        expertise: 'Startup operations, networking, intro management',
       },
     };
 
@@ -177,9 +177,9 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     console.log('\n📝 Setting up initial conversation...');
     const initialResult = await runner.runSimulation(
       persona,
-      'concierge',
+      'innovator',
       3,
-      'reengagement-test-2',
+      'innovator-reengagement-test-2',
       false
     );
 
@@ -197,7 +197,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     console.log(`✅ Past re-engagement simulated\n`);
 
     // Trigger re-engagement check
-    const { invokeConciergeAgent } = await import('../../../packages/agents/concierge/src/index');
+    const { invokeInnovatorAgent } = await import('../../../packages/agents/innovator/src/index');
 
     const { data: conversation } = await testDbClient
       .from('conversations')
@@ -232,7 +232,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
 
     console.log('🔄 Triggering re-engagement check (5 days since last message, but 3 days since last attempt)...');
 
-    const response = await invokeConciergeAgent(
+    const response = await invokeInnovatorAgent(
       reengagementMessage,
       user!,
       conversation!,
@@ -265,7 +265,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     expect(recentSentActions?.length).toBe(1);
 
     console.log(`✅ No new re_engagement_message_sent logged (correct)\n`);
-  }, 120000); // 2 minutes for simulation + throttling check
+  }, 60000);
 
   /**
    * Scenario 3: 3-strike pause
@@ -274,15 +274,15 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
    * Agent should be SILENT and log re_engagement_paused.
    */
   it('should pause re-engagement after 3 unanswered attempts in 90 days', async () => {
-    // Create test persona
+    // Create test persona - Innovator context
     const persona: SimulatedPersona = {
       name: 'Pat Rivera',
-      personality: 'Skeptical CTO evaluating the community',
-      systemPrompt: `You are Pat Rivera, CTO at TechFirm. You're skeptical but thoughtful, asking questions before committing. Respond with measured enthusiasm.`,
+      personality: 'Skeptical CTO evaluating intro opportunities',
+      systemPrompt: `You are Pat Rivera, CTO at TechFirm. You're skeptical but thoughtful about intro opportunities. Ask questions before committing.`,
       initialContext: {
         company: 'TechFirm',
         title: 'CTO',
-        expertise: 'Technical architecture, team building, vendor evaluation',
+        expertise: 'Technical leadership, vendor evaluation, professional networking',
       },
     };
 
@@ -290,9 +290,9 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     console.log('\n📝 Setting up initial conversation...');
     const initialResult = await runner.runSimulation(
       persona,
-      'concierge',
+      'innovator',
       3,
-      'reengagement-test-3',
+      'innovator-reengagement-test-3',
       false
     );
 
@@ -300,18 +300,6 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     testUserIds.push(userId);
 
     console.log(`✅ User created: ${userId}`);
-
-    // IMPORTANT: Backdate conversation messages to be BEFORE simulated re-engagements
-    // Otherwise, the throttling check will find these messages and count them as responses
-    const eightyDaysAgo = new Date();
-    eightyDaysAgo.setDate(eightyDaysAgo.getDate() - 80);
-
-    await testDbClient
-      .from('messages')
-      .update({ created_at: eightyDaysAgo.toISOString() })
-      .eq('user_id', userId);
-
-    console.log(`✅ Backdated conversation messages to 80 days ago`);
 
     // Simulate 3 unanswered re-engagement attempts in the past 90 days
     console.log('📝 Simulating 3 unanswered re-engagement attempts...');
@@ -324,7 +312,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     console.log(`✅ 3 unanswered attempts simulated (70, 50, 30 days ago)\n`);
 
     // Trigger re-engagement check
-    const { invokeConciergeAgent } = await import('../../../packages/agents/concierge/src/index');
+    const { invokeInnovatorAgent } = await import('../../../packages/agents/innovator/src/index');
 
     const { data: conversation } = await testDbClient
       .from('conversations')
@@ -359,7 +347,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
 
     console.log('🔄 Triggering re-engagement check (after 3 unanswered attempts)...');
 
-    const response = await invokeConciergeAgent(
+    const response = await invokeInnovatorAgent(
       reengagementMessage,
       user!,
       conversation!,
@@ -382,7 +370,7 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
       a => a.action_type === 're_engagement_paused'
     );
     expect(pausedAction).toBeDefined();
-    expect(pausedAction?.output_data?.requiresManualOverride).toBe(true);
+    expect(pausedAction?.input_data?.requiresManualOverride).toBe(true);
     console.log(`✅ Logged re_engagement_paused action with requiresManualOverride=true`);
 
     // Validate: Should NOT log message_sent
@@ -393,5 +381,5 @@ describe('Concierge Agent - Re-engagement Throttling (Phase 3.5)', () => {
     expect(recentSentActions?.length).toBe(3);
 
     console.log(`✅ No new re_engagement_message_sent logged (correct)\n`);
-  }, 120000); // 2 minutes for simulation + 3-strike check
+  }, 60000);
 });

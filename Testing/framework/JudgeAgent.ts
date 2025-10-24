@@ -21,6 +21,7 @@ export interface DatabaseContext {
     action_type: string;
     created_at: string;
     input_data?: any;
+    output_data?: any;  // Contains LLM reasoning, decision details, metrics
   }>;
   stateTransitions?: Array<{
     table: string;
@@ -142,7 +143,14 @@ export class JudgeAgent {
         dbContext.agentActionsLogged.forEach(action => {
           contextSection += `- ${action.action_type} at ${action.created_at}\n`;
           if (action.input_data) {
-            contextSection += `  Data: ${JSON.stringify(action.input_data)}\n`;
+            contextSection += `  Input: ${JSON.stringify(action.input_data)}\n`;
+          }
+          if (action.output_data) {
+            contextSection += `  Output: ${JSON.stringify(action.output_data)}\n`;
+            // Highlight LLM reasoning if present
+            if (action.output_data.reasoning) {
+              contextSection += `  🧠 Agent Reasoning: "${action.output_data.reasoning}"\n`;
+            }
           }
         });
       }
@@ -204,13 +212,38 @@ Evaluation Criteria:
 - Asking for information already provided
 - Repeating the same question multiple times
 
-**Re-engagement Throttling Errors (Phase 3.5):**
+**Re-engagement Decision Evaluation (Phase 3.5):**
+
+CRITICAL: The agent can decide NOT to send a re-engagement message. This is a FEATURE, not a bug.
+
+When evaluating re_engagement_decision_no_message actions, balance TWO competing priorities:
+
+1. **User Empathy (Avoid Spam):**
+   - High-value business leaders will delete apps that bombard them
+   - Low-value opportunities (weak connections, small bounties) should NOT warrant re-engagement
+   - Sparse conversation history suggests low engagement - agent should be conservative
+   - If the agent's reasoning shows appropriate restraint, this is GOOD
+
+2. **Business Needs (Drive Revenue):**
+   - Revenue-generating actions are critical: intros, connection requests
+   - High-value opportunities (strong connections, large bounties, vouched requests) SHOULD warrant outreach
+   - Users with active goals and engaged history represent investment that needs nurturing
+   - If the agent is too conservative with compelling opportunities, this is BAD
+
+**Judge with taste, not rules:**
+- No message for sparse context + low-value opportunity = ✅ CORRECT
+- No message for rich context + high-value opportunity = ❌ MISSED OPPORTUNITY
+- Message for sparse context + low-value = ❌ SPAM RISK
+- Message for rich context + high-value = ✅ CORRECT
+
+Look for the agent's reasoning in output_data to understand its decision-making.
+
+**Re-engagement Throttling Errors (Technical):**
 - Sending re-engagement message when one was sent <7 days ago
 - Sending re-engagement message after 3 unanswered attempts in 90 days
 - Missing agent_actions_log entry for re_engagement_message_sent when message was sent
 - Missing agent_actions_log entry for re_engagement_throttled when throttled
 - Missing agent_actions_log entry for re_engagement_paused when paused
-- Sending ANY message when throttling should have prevented it
 
 **Intro Flow State Transition Errors (Phase 3.4):**
 - Failing to pause competing intro_opportunities when one is accepted

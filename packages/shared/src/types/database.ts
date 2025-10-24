@@ -252,15 +252,23 @@ export interface UserPriority {
 
   // Priority item
   priority_rank: number; // 1 = highest
-  item_type: 'intro_opportunity' | 'community_request' | 'solution_update' | 'community_response' | 'expert_impact_notification';
+  item_type: 'intro_opportunity' | 'community_request' | 'solution_update' | 'community_response' | 'expert_impact_notification' | 'connection_request';
   item_id: string;
   value_score: number | null; // 0-100
 
   // Lifecycle
-  status: 'active' | 'presented' | 'actioned' | 'expired';
+  status: 'active' | 'presented' | 'clarifying' | 'actioned' | 'expired';
+  presentation_count: number; // Number of times presented (0-2, 2=dormant)
   created_at: Date;
   expires_at: Date | null;
   presented_at: Date | null;
+
+  // Denormalized fields for fast intent matching (NO joins needed in Call 1)
+  item_summary: string | null; // One-line summary
+  item_primary_name: string | null; // Primary person name (prospect/requestor/expert)
+  item_secondary_name: string | null; // Secondary person name (innovator/connector)
+  item_context: string | null; // Context/reason
+  item_metadata: Record<string, any> | null; // Additional fields (bounty, vouches, category)
 }
 
 /**
@@ -316,7 +324,8 @@ export interface IntroOpportunity {
   prospect_id: string | null; // If prospect not yet on platform
 
   // Opportunity details
-  prospect_name: string;
+  first_name: string;
+  last_name: string;
   prospect_company: string | null;
   prospect_title: string | null;
   prospect_linkedin_url: string | null;

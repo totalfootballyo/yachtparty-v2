@@ -38,11 +38,13 @@ export async function loadIntroOpportunities(
   userId: string,
   supabase: SupabaseClient
 ): Promise<PriorityItem[]> {
+  // Phase 6: Exclude dormant items (presentation_count >= 2)
   const { data: opportunities, error } = await supabase
     .from('intro_opportunities')
-    .select('*, prospect:prospect_id(*), innovator:innovator_id(*)')
+    .select('*')
     .eq('connector_user_id', userId)
     .eq('status', 'open')
+    .lt('presentation_count', 2) // Exclude items presented 2+ times (dormant threshold)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -66,15 +68,17 @@ export async function loadIntroOpportunities(
     const daysSinceCreated = daysBetween(new Date(opp.created_at), new Date());
     if (daysSinceCreated < 3) score += 10;
 
+    const prospectFullName = `${opp.first_name} ${opp.last_name}`.trim();
+
     return {
       id: opp.id,
       score,
-      reason: `Intro opportunity: Connect ${opp.prospect.name} at ${opp.prospect.company} to ${opp.innovator.first_name} (${opp.bounty_credits} credits)`,
+      reason: `Intro opportunity: Connect ${prospectFullName} at ${opp.prospect_company || 'their company'} (${opp.bounty_credits} credits)`,
       data: {
         item_type: 'intro_opportunity',
         item_id: opp.id,
-        prospect_name: opp.prospect.name,
-        prospect_company: opp.prospect.company,
+        prospect_name: prospectFullName,
+        prospect_company: opp.prospect_company,
         bounty_credits: opp.bounty_credits,
       },
     };
@@ -89,11 +93,13 @@ export async function loadConnectionRequests(
   userId: string,
   supabase: SupabaseClient
 ): Promise<PriorityItem[]> {
+  // Phase 6: Exclude dormant items (presentation_count >= 2)
   const { data: requests, error } = await supabase
     .from('connection_requests')
     .select('*')
     .eq('introducee_user_id', userId)
     .eq('status', 'open')
+    .lt('presentation_count', 2) // Exclude items presented 2+ times (dormant threshold)
     .order('created_at', { ascending: false});
 
   if (error) {
@@ -191,7 +197,7 @@ export async function loadIntroOffers(
         item_type: 'intro_offer',
         item_id: offer.id,
         role: 'introducee',
-        prospect_name: offer.prospect_name,
+        prospect_name: offer.prospect_name, // intro_offers table still has prospect_name
         prospect_company: offer.prospect_company,
         offering_user_name: `${offer.offering_user.first_name} ${offer.offering_user.last_name}`,
         bounty_credits: offer.bounty_credits,
@@ -215,7 +221,7 @@ export async function loadIntroOffers(
         item_type: 'intro_offer',
         item_id: offer.id,
         role: 'connector',
-        prospect_name: offer.prospect_name,
+        prospect_name: offer.prospect_name, // intro_offers table still has prospect_name
         introducee_name: `${offer.introducee.first_name} ${offer.introducee.last_name}`,
       },
     });

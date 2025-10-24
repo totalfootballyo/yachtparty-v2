@@ -252,6 +252,29 @@ async function handleUserMessage(
 
   const messageTexts = parseMessageSequences(rawTexts);
 
+  // Step 6: Track proactive priority presentation (if applicable)
+  // Phase 5: Priority Status Tracking (Appendix E)
+  if (decision.context_for_call_2?.proactive_priority && messageTexts.length > 0) {
+    const proactivePriority = decision.context_for_call_2.proactive_priority;
+
+    // Only mark as presented if message was actually sent (has content)
+    if (proactivePriority.should_mention && proactivePriority.item_id) {
+      try {
+        await markPriorityPresented(
+          dbClient,
+          proactivePriority.item_type as 'intro_opportunity' | 'connection_request' | 'community_request',
+          proactivePriority.item_id,
+          'natural', // This is a proactive mention, not dedicated re-engagement
+          user.id,
+          conversation.id
+        );
+        console.log(`[Innovator 2-LLM] Marked proactive priority as presented: ${proactivePriority.item_type} ${proactivePriority.item_id}`);
+      } catch (error) {
+        console.error(`[Innovator 2-LLM] Failed to mark proactive priority as presented:`, error);
+      }
+    }
+  }
+
   // Log completion
   await logAgentAction({
     agentType: 'innovator',
@@ -548,6 +571,32 @@ async function handleReengagement(
 
   const messageTexts = parseMessageSequences(rawTexts);
 
+  // Step 7: Track priority presentations in re-engagement (Phase 5: Priority Status Tracking)
+  if (decision.threads_to_address && messageTexts.length > 0) {
+    for (const thread of decision.threads_to_address) {
+      // Only track priority threads (not general updates)
+      if (thread.type === 'priority_opportunity' && thread.item_id) {
+        // Determine which table this priority is from
+        const priority = context.userPriorities?.find(p => p.item_id === thread.item_id);
+        if (priority && (priority.item_type === 'intro_opportunity' || priority.item_type === 'connection_request' || priority.item_type === 'community_request')) {
+          try {
+            await markPriorityPresented(
+              dbClient,
+              priority.item_type as 'intro_opportunity' | 'connection_request' | 'community_request',
+              thread.item_id,
+              'dedicated', // Re-engagement is dedicated presentation, not proactive
+              user.id,
+              conversation.id
+            );
+            console.log(`[Innovator Re-engagement] Marked priority as presented (dedicated): ${priority.item_type} ${thread.item_id}`);
+          } catch (error) {
+            console.error(`[Innovator Re-engagement] Failed to mark priority as presented:`, error);
+          }
+        }
+      }
+    }
+  }
+
   // Log completion
   await logAgentAction({
     agentType: 'innovator',
@@ -571,6 +620,122 @@ async function handleReengagement(
 }
 
 /**
+ * Mark priority as presented, increment count, check for dormancy.
+ *
+ * Part of Phase 5: Priority Status Tracking (Appendix E).
+ *
+ * @param dbClient - Supabase client
+ * @param itemType - Type of priority item
+ * @param itemId - ID of the item
+ * @param presentationType - How it was presented ('dedicated' = re-engagement, 'natural' = proactive mention)
+ * @param userId - User ID (for logging)
+ * @param conversationId - Conversation ID (for logging)
+ */
+async function markPriorityPresented(
+  dbClient: SupabaseClient,
+  itemType: 'intro_opportunity' | 'connection_request' | 'community_request',
+  itemId: string,
+  presentationType: 'dedicated' | 'natural',
+  userId: string,
+  conversationId: string
+): Promise<void> {
+  const tableName = itemType === 'intro_opportunity' ? 'intro_opportunities' :
+                    itemType === 'connection_request' ? 'connection_requests' :
+                    'community_requests';
+
+  // Get current count and status
+  const { data: current } = await dbClient
+    .from(tableName)
+    .select('presentation_count, status')
+    .eq('id', itemId)
+    .single();
+
+  if (!current) {
+    console.warn(`[markPriorityPresented] Item not found: ${itemType} ${itemId}`);
+    return;
+  }
+
+  const newCount = (current.presentation_count || 0) + 1;
+  const currentStatus = current.status || 'open';
+
+  // Determine new status
+  let newStatus = currentStatus;
+  if (currentStatus === 'open') {
+    newStatus = 'presented'; // First presentation
+  }
+
+  // Check for dormancy (2 presentations, no response)
+  const shouldMarkDormant = newCount >= 2 && currentStatus === 'presented';
+
+  // Update source table
+  await dbClient
+    .from(tableName)
+    .update({
+      presentation_count: newCount,
+      last_presented_at: new Date().toISOString(),
+      status: shouldMarkDormant ? 'dormant' : newStatus,
+      dormant_at: shouldMarkDormant ? new Date().toISOString() : undefined
+    })
+    .eq('id', itemId);
+
+  // If dormant, cancel all future re-engagement tasks
+  if (shouldMarkDormant) {
+    await cancelReengagementTasksForPriority(dbClient, itemType, itemId);
+  }
+
+  // Log action
+  await logAgentAction({
+    agentType: 'innovator',
+    actionType: shouldMarkDormant ? 'priority_marked_dormant' : 'priority_presented',
+    userId,
+    contextId: conversationId,
+    contextType: 'conversation',
+    inputData: {
+      item_type: itemType,
+      item_id: itemId,
+      presentation_count: newCount,
+      presentation_type: presentationType
+    },
+    outputData: {
+      new_status: shouldMarkDormant ? 'dormant' : newStatus,
+      message: shouldMarkDormant
+        ? 'User did not respond after 2 presentations. Marked dormant, cancelled re-engagement tasks.'
+        : `Priority presented to user (${presentationType}).`
+    }
+  }, dbClient);
+}
+
+/**
+ * Cancel all pending re-engagement tasks for a priority (when it goes dormant).
+ *
+ * Part of Phase 5: Priority Status Tracking (Appendix E).
+ *
+ * @param dbClient - Supabase client
+ * @param itemType - Type of priority item
+ * @param itemId - ID of the item
+ */
+async function cancelReengagementTasksForPriority(
+  dbClient: SupabaseClient,
+  itemType: string,
+  itemId: string
+): Promise<void> {
+  await dbClient
+    .from('agent_tasks')
+    .update({
+      status: 'cancelled',
+      result_json: {
+        reason: 'item_marked_dormant',
+        cancelled_at: new Date().toISOString(),
+        explanation: 'Priority presented 2x with no user response. Moved to dormant status.'
+      }
+    })
+    .eq('context_type', itemType)
+    .eq('context_id', itemId)
+    .eq('task_type', 're_engagement_check')
+    .eq('status', 'pending');
+}
+
+/**
  * Load Innovator Agent Context
  *
  * Loads conversation history, priorities, requests, profile, and intros.
@@ -586,13 +751,7 @@ async function loadAgentContext(
   dbClient: SupabaseClient = createServiceClient()
 ): Promise<{
   recentMessages: Message[];
-  userPriorities: Array<{
-    id: string;
-    item_type: string;
-    item_id: string;
-    value_score?: number | null;
-    status: string;
-  }>;
+  userPriorities: UserPriority[];
   outstandingCommunityRequests: Array<{
     id: string;
     question: string;
@@ -627,12 +786,13 @@ async function loadAgentContext(
     .order('created_at', { ascending: false })
     .limit(messageLimit);
 
-  // Load user priorities
+  // Load user priorities - denormalized fields, NO joins needed
   const { data: priorities } = await supabase
     .from('user_priorities')
-    .select('*')
+    .select('id, user_id, priority_rank, item_type, item_id, value_score, status, presentation_count, created_at, expires_at, presented_at, item_summary, item_primary_name, item_secondary_name, item_context, item_metadata')
     .eq('user_id', userId)
-    .eq('status', 'active')
+    .in('status', ['active', 'presented', 'clarifying']) // Exclude actioned, dormant
+    .lte('presentation_count', 1) // Exclude items presented 2x (approaching dormant)
     .order('priority_rank', { ascending: true })
     .limit(10);
 
@@ -662,14 +822,7 @@ async function loadAgentContext(
 
   return {
     recentMessages: (messages || []).reverse() as Message[],
-    userPriorities:
-      priorities?.map((p) => ({
-        id: p.id,
-        item_type: p.item_type,
-        item_id: p.item_id,
-        value_score: p.value_score,
-        status: p.status,
-      })) || [],
+    userPriorities: (priorities as UserPriority[]) || [],
     outstandingCommunityRequests:
       requests?.map((r) => ({
         id: r.id,
@@ -903,6 +1056,17 @@ async function executeTool(
 
     case 'accept_intro_opportunity': {
       // User accepts an intro opportunity from their priorities
+
+      // Track presentation before updating status (Phase 5: Priority Status Tracking)
+      await markPriorityPresented(
+        dbClient,
+        'intro_opportunity',
+        toolDef.params.intro_opportunity_id,
+        'dedicated', // User is directly responding to this priority
+        user.id,
+        conversation.id
+      );
+
       const { data: introOpp, error } = await supabase
         .from('intro_opportunities')
         .update({ status: 'accepted', connector_response: 'Accepted' })
@@ -926,6 +1090,17 @@ async function executeTool(
 
     case 'decline_intro_opportunity': {
       // User declines an intro opportunity
+
+      // Track presentation before updating status (Phase 5: Priority Status Tracking)
+      await markPriorityPresented(
+        dbClient,
+        'intro_opportunity',
+        toolDef.params.intro_opportunity_id,
+        'dedicated', // User is directly responding to this priority
+        user.id,
+        conversation.id
+      );
+
       const { data: introOpp, error } = await supabase
         .from('intro_opportunities')
         .update({
@@ -1055,6 +1230,17 @@ async function executeTool(
 
     case 'accept_connection_request': {
       // User accepts a connection request
+
+      // Track presentation before updating status (Phase 5: Priority Status Tracking)
+      await markPriorityPresented(
+        dbClient,
+        'connection_request',
+        toolDef.params.connection_request_id,
+        'dedicated', // User is directly responding to this priority
+        user.id,
+        conversation.id
+      );
+
       const { error } = await supabase
         .from('connection_requests')
         .update({
@@ -1079,6 +1265,17 @@ async function executeTool(
 
     case 'decline_connection_request': {
       // User declines a connection request
+
+      // Track presentation before updating status (Phase 5: Priority Status Tracking)
+      await markPriorityPresented(
+        dbClient,
+        'connection_request',
+        toolDef.params.connection_request_id,
+        'dedicated', // User is directly responding to this priority
+        user.id,
+        conversation.id
+      );
+
       const { error } = await supabase
         .from('connection_requests')
         .update({

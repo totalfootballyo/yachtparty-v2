@@ -864,3 +864,9 @@ async function evaluateInProgress(
 9. CI/CD Integration // let's not make this part of CI / CD at all. we can run these tests periodically when we want, and we will not use them on every PR 
 
 10. Test Organization // unit tests can live in the agent files like /packages/agents/bouncer/__tests__ while e2e simulation tests can live in Yachtparty v.2/Testing because a given synthetic user will work with multiple agents in their progression 
+
+
+//> note that we are obviously making a significant investment in this test infrastructure. this is not an accident. this system is quite complex and has a lot of 
+surface area for silent failues and strange behavior that we could never find on manual testing. combine that with the fact that our users are very high value, 
+highly coveted senior business leaders who dont have time for playing with new apps. this testing infrastructure is the only way we'll catch issues before they 
+do, just before they delete their accounts. this is why we are not choosing to take easy paths / quick wins
